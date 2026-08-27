@@ -26,6 +26,7 @@ let mode = null;           // 'episode' | 'ad' | null
 let started = false;
 let autosaveInterval = null;
 let nextIndex = 0;         
+let currentVideoId = "";
 
 function randomShowIndex() {
   return Math.floor(Math.random() * shows.length);
@@ -53,64 +54,25 @@ function getApiKey() { return localStorage.getItem(LS_API_KEY) || ""; }
 function setStatus(msg) { el.status.textContent = msg; }
 
 /* =========================================================
-   REKLAMSIZ VE CORS ENGELİNE TAKILMAYAN VİDEO MOTORU
+   REKLAMSIZ EMBED OYNATICI MOTORU
    ========================================================= */
-async function getAdFreeStreamUrl(videoId) {
-  // CORS engeline takılmayan ve ham video veren kararlı mirror API'ler
-  const instances = [
-    `https://inv.nadeko.net/latest/${videoId}?local=true`,
-    `https://invidious.nerdvpn.de/latest/${videoId}?local=true`,
-    `https://yewtu.be/latest/${videoId}?local=true`
-  ];
-
-  for (const url of instances) {
-    try {
-      const res = await fetch(url, { method: 'HEAD' });
-      if (res.ok) return url;
-    } catch (e) {
-      console.warn("Sunucu deneniyor...", url);
-    }
-  }
-
-  // Varsayılan kesintisiz yedek
-  return `https://inv.nadeko.net/latest/${videoId}?local=true`;
-}
-
 function initSmartTvPlayer() {
   player = document.getElementById('player');
   
-  player.getCurrentTime = function() { return player.currentTime || 0; };
-  player.getVideoData = function() { return { video_id: player.dataset.currentVideoId }; };
-
-  player.onended = function() {
-    if (mode === 'episode') playCurrentQueueVideo();
-  };
+  player.getCurrentTime = function() { return 0; };
+  player.getVideoData = function() { return { video_id: currentVideoId }; };
 }
 
-async function loadVideoByIdHTML5(options) {
+function loadVideoByIdHTML5(options) {
   const videoId = typeof options === 'string' ? options : options.videoId;
   const startSeconds = options ? (options.startSeconds || 0) : 0;
   
-  setStatus("Reklamlar temizleniyor…");
-  player.dataset.currentVideoId = videoId;
+  currentVideoId = videoId;
+  setStatus("Oynatılıyor.");
 
-  const adFreeUrl = await getAdFreeStreamUrl(videoId);
-  player.src = adFreeUrl;
-  player.load();
-
-  player.oncanplay = function() {
-    if (startSeconds > 0) player.currentTime = startSeconds;
-    player.play().catch(err => console.log("Oynatma uyarısı:", err));
-    setStatus("Oynatılıyor.");
-    player.oncanplay = null; 
-  };
-  
-  // Oynatma hatası alırsa sonraki sunucuya düşmesi için hata yönetimi
-  player.onerror = function() {
-    console.warn("Stream yüklenemedi, yedek stream deneniyor...");
-    player.src = `https://invidious.nerdvpn.de/latest/${videoId}?local=true`;
-    player.load();
-  };
+  // Reklamsız Invidious Embed Adresi
+  const embedUrl = `https://inv.nadeko.net/embed/${videoId}?autoplay=1&listen=false&t=${startSeconds}`;
+  player.src = embedUrl;
 }
 
 /* ---------- progress save / resume ---------- */
@@ -122,9 +84,7 @@ function getSavedProgress() {
 }
 
 function saveProgress() {
-  if (mode !== 'episode' || !player || !player.getCurrentTime) return;
-  let videoId = null;
-  try { videoId = player.getVideoData ? player.getVideoData().video_id : null; } catch {}
+  if (mode !== 'episode' || !currentVideoId) return;
   const data = {
     rotationIndex,
     nextIndex,
@@ -132,8 +92,8 @@ function saveProgress() {
     currentShowName,
     currentUnitTitle,
     remainingQueue: currentQueue.slice(),
-    currentVideoId: videoId,
-    currentTime: player.getCurrentTime() || 0,
+    currentVideoId: currentVideoId,
+    currentTime: 0,
   };
   localStorage.setItem(LS_PROGRESS, JSON.stringify(data));
 }
@@ -334,14 +294,8 @@ el.startBtn.addEventListener('click', async () => {
 });
 
 el.pauseBtn.addEventListener('click', () => {
-  if (!player) return;
-  if (!player.paused) {
-    player.pause();
-    el.pauseBtn.textContent = '▶ Devam';
-  } else {
-    player.play().catch(err => console.log(err));
-    el.pauseBtn.textContent = '⏸ Duraklat';
-  }
+  // Embed iframe içerisinde duraklatma komutu
+  setStatus("Oynatıcı içi kontrolleri kullanabilirsiniz.");
 });
 
 el.nextBtn.addEventListener('click', () => {
@@ -365,7 +319,6 @@ el.resetBtn.addEventListener('click', () => {
   el.startBtn.textContent = "▶ Maratonu Başlat";
   renderQueuePanel();
   if (player) {
-    player.pause();
     player.src = "";
   }
   started = false;
