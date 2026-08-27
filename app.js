@@ -30,6 +30,11 @@ let adInterval = null;
 let adSecondsLeft = 0;
 let started = false;
 let autosaveInterval = null;
+let nextIndex = 0;         // rastgele seçilmiş bir sonraki dizi
+
+function randomShowIndex() {
+  return Math.floor(Math.random() * shows.length);
+}
 
 /* ---------- DOM refs ---------- */
 const el = {
@@ -71,6 +76,7 @@ function saveProgress() {
   try { videoId = player.getVideoData ? player.getVideoData().video_id : null; } catch {}
   const data = {
     rotationIndex,
+    nextIndex,
     unitIndices: shows.map(s => s.unitIndex),
     currentShowName,
     currentUnitTitle,
@@ -92,6 +98,7 @@ function startAutosave() {
 
 function resumeFromProgress(saved) {
   rotationIndex = saved.rotationIndex || 0;
+  nextIndex = (typeof saved.nextIndex === 'number') ? saved.nextIndex : randomShowIndex();
   shows.forEach((s, i) => { s.unitIndex = saved.unitIndices?.[i] ?? 0; });
   currentShowName = saved.currentShowName || shows[rotationIndex]?.name || "";
   currentUnitTitle = saved.currentUnitTitle || "";
@@ -100,7 +107,7 @@ function resumeFromProgress(saved) {
   started = true;
 
   el.nowTitle.textContent = `${currentShowName} — ${currentUnitTitle}`;
-  el.nextTitle.textContent = shows[(rotationIndex + 1) % shows.length]?.name || "—";
+  el.nextTitle.textContent = shows[nextIndex]?.name || "—";
   el.adPanel.classList.add('hidden');
   renderQueuePanel();
   highlightActiveShow();
@@ -216,7 +223,8 @@ function onPlayerStateChange(e) {
 /* ---------- marathon logic ---------- */
 function startMarathon() {
   started = true;
-  rotationIndex = 0;
+  rotationIndex = randomShowIndex();
+  nextIndex = randomShowIndex();
   renderQueuePanel();
   playNextShowUnit();
 }
@@ -234,7 +242,7 @@ function playNextShowUnit() {
   currentUnitTitle = unit.title;
   mode = 'episode';
   el.nowTitle.textContent = `${show.name} — ${unit.title}`;
-  el.nextTitle.textContent = shows[(rotationIndex + 1) % shows.length]?.name || "—";
+  el.nextTitle.textContent = shows[nextIndex]?.name || "—";
   el.adPanel.classList.add('hidden');
   playCurrentQueueVideo();
 }
@@ -270,7 +278,8 @@ function finishAd() {
 }
 
 function advanceRotation() {
-  rotationIndex = (rotationIndex + 1) % shows.length;
+  rotationIndex = nextIndex;
+  nextIndex = randomShowIndex();
   playNextShowUnit();
 }
 
@@ -371,4 +380,4 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   setStatus(hasKey ? (saved ? "Kaldığın yerden devam etmeye hazır." : "API anahtarı ayarlı. Başlat'a basabilirsin.") : "API anahtarı ayarlanmadı.");
 });
-    
+   
