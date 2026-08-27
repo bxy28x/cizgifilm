@@ -1,5 +1,5 @@
 /* =========================================================
-   AYARLAR — diziler
+   AYARLAR — diziler ve reklam videosu burada
    ========================================================= */
 const CONFIG = {
   SHOWS: [
@@ -16,8 +16,7 @@ const LS_PROGRESS = "marathon_progress";
 
 /* ---------- state ---------- */
 let player;
-let isPlayerReady = false;
-let shows = [];            
+let shows = [];            // { name, units:[{title, videoIds:[]}], unitIndex }
 let showsLoaded = false;
 let rotationIndex = 0;
 let currentQueue = [];
@@ -26,7 +25,7 @@ let currentUnitTitle = "";
 let mode = null;           // 'episode' | 'ad' | null
 let started = false;
 let autosaveInterval = null;
-let nextIndex = 0;         
+let nextIndex = 0;         // rastgele seçilmiş bir sonraki dizi
 
 function randomShowIndex() {
   return Math.floor(Math.random() * shows.length);
@@ -53,44 +52,6 @@ const el = {
 function getApiKey() { return localStorage.getItem(LS_API_KEY) || ""; }
 function setStatus(msg) { el.status.textContent = msg; }
 
-/* =========================================================
-   YOUTUBE NO-COOKIE PLAYER ALTYAPISI
-   ========================================================= */
-function onYouTubeIframeAPIReady() {
-  player = new YT.Player('player', {
-    height: '100%',
-    width: '100%',
-    host: 'https://www.youtube-nocookie.com', // Çerezsiz No-Cookie Etki Alanı
-    playerVars: {
-      'autoplay': 1,
-      'controls': 1,
-      'rel': 0,
-      'modestbranding': 1,
-      'playsinline': 1
-    },
-    events: {
-      'onReady': () => { isPlayerReady = true; },
-      'onStateChange': onPlayerStateChange
-    }
-  });
-}
-
-function onPlayerStateChange(event) {
-  // Video Bittiğinde Otomatik Geçiş (YT.PlayerState.ENDED === 0)
-  if (event.data === YT.PlayerState.ENDED) {
-    if (mode === 'episode') playCurrentQueueVideo();
-  }
-}
-
-function loadVideo(videoId, startSeconds = 0) {
-  if (!isPlayerReady || !player) return;
-  setStatus("Oynatılıyor.");
-  player.loadVideoById({
-    videoId: videoId,
-    startSeconds: startSeconds
-  });
-}
-
 /* ---------- progress save / resume ---------- */
 function getSavedProgress() {
   try {
@@ -100,8 +61,9 @@ function getSavedProgress() {
 }
 
 function saveProgress() {
-  if (mode !== 'episode' || !player || typeof player.getCurrentTime !== 'function') return;
-  let videoData = player.getVideoData ? player.getVideoData() : null;
+  if (mode !== 'episode' || !player || !player.getCurrentTime) return;
+  let videoId = null;
+  try { videoId = player.getVideoData ? player.getVideoData().video_id : null; } catch {}
   const data = {
     rotationIndex,
     nextIndex,
@@ -109,7 +71,7 @@ function saveProgress() {
     currentShowName,
     currentUnitTitle,
     remainingQueue: currentQueue.slice(),
-    currentVideoId: videoData ? videoData.video_id : null,
+    currentVideoId: videoId,
     currentTime: player.getCurrentTime() || 0,
   };
   localStorage.setItem(LS_PROGRESS, JSON.stringify(data));
@@ -157,7 +119,6 @@ function renderQueuePanel() {
     el.queue.appendChild(item);
   });
 }
-
 function highlightActiveShow() {
   const items = el.queue.querySelectorAll('.queue-item');
   items.forEach((it, idx) => it.classList.toggle('active', idx === rotationIndex));
@@ -187,6 +148,8 @@ async function fetchPlaylistItems(playlistId, apiKey) {
   return items;
 }
 
+// "... (1/6)", "... (2/6)" gibi parçaları veya zincirleme bölümleri
+// tek bir birim olarak grupla — böylece aralarına reklam girmez.
 function groupIntoUnits(items) {
   const units = [];
   let i = 0;
@@ -228,6 +191,44 @@ async function loadAllShows(apiKey) {
   }
   showsLoaded = true;
   setStatus("Hazır.");
+}
+
+/* ---------- YouTube IFrame player ---------- */
+let isPlayerReady = false;
+let pendingVideo = null; // {videoId, startSeconds} — player hazır olmadan gelen istek
+
+function onYouTubeIframeAPIReady() {
+  player = new YT.Player('player', {
+    height: '100%', width: '100%',
+    host: 'https://www.youtube-nocookie.com',
+    playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3 },
+    events: {
+      onReady: () => {
+        isPlayerReady = true;
+        if (pendingVideo) {
+          const { videoId, startSeconds } = pendingVideo;
+          pendingVideo = null;
+          loadVideo(videoId, startSeconds);
+        }
+      },
+      onStateChange: onPlayerStateChange
+    }
+  });
+}
+
+function loadVideo(videoId, startSeconds = 0) {
+  if (!isPlayerReady || !player) {
+    // Player henüz hazır değil — isteği beklet, onReady tetiklenince otomatik oynat
+    pendingVideo = { videoId, startSeconds };
+    return;
+  }
+  player.loadVideoById({ videoId, startSeconds });
+}
+
+function onPlayerStateChange(e) {
+  if (e.data === YT.PlayerState.ENDED) {
+    if (mode === 'episode') playCurrentQueueVideo();
+  }
 }
 
 /* ---------- marathon logic ---------- */
@@ -311,9 +312,8 @@ el.startBtn.addEventListener('click', async () => {
 });
 
 el.pauseBtn.addEventListener('click', () => {
-  if (!player || typeof player.getPlayerState !== 'function') return;
-  const state = player.getPlayerState();
-  if (state === YT.PlayerState.PLAYING) {
+  if (!player || !player.getPlayerState) return;
+  if (player.getPlayerState() === YT.PlayerState.PLAYING) {
     player.pauseVideo();
     el.pauseBtn.textContent = '▶ Devam';
   } else {
@@ -342,9 +342,7 @@ el.resetBtn.addEventListener('click', () => {
   el.pauseBtn.textContent = "⏸ Duraklat";
   el.startBtn.textContent = "▶ Maratonu Başlat";
   renderQueuePanel();
-  if (player && typeof player.stopVideo === 'function') {
-    player.stopVideo();
-  }
+  if (player && player.stopVideo) player.stopVideo();
   started = false;
   setStatus(showsLoaded ? "Baştan başlamak için Başlat'a bas." : "API anahtarı ayarlanmadı.");
 });
