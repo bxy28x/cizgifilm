@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Çizgi Film Maratonu</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <div class="eyebrow">MARATON PLAYER</div>
+        <h1>Çizgi Film Maratonu</h1>
+        <p class="muted">Bölüm bitince sıradaki diziye otomatik geçer.</p>
+      </div>
+      <button id="settingsBtn" class="secondary">⚙ Ayarlar</button>
+    </header>
+
+    <section class="player-card">
+      <div id="player"></div>
+      <div class="now">
+        <div>
+          <span class="label">Şimdi</span>
+          <h2 id="nowTitle">Maraton hazır</h2>
+        </div>
+        <div class="next">
+          <span class="label">Sıradaki</span>
+          <strong id="nextTitle">—</strong>
+        </div>
+      </div>
+      <div id="adPanel" class="ad-panel hidden">
+        <div class="ad-title">📢 Reklam arası</div>
+        <div>Sonraki bölüme geçiliyor… <strong id="adCountdown">30</strong> sn</div>
+      </div>
+    </section>
+
+    <section class="controls">
+      <button id="startBtn" class="primary">▶ Maratonu Başlat</button>
+      <button id="pauseBtn" class="secondary">⏸ Duraklat</button>
+      <button id="nextBtn" class="secondary">⏭ Sonraki</button>
+      <button id="resetBtn" class="danger">↻ Baştan</button>
+    </section>
+
+    <section class="info-grid">
+      <div class="panel">
+        <span class="label">Maraton sırası</span>
+        <div id="queue"></div>
+      </div>
+      <div class="panel">
+        <span class="label">Durum</span>
+        <p id="status">API anahtarı ayarlanmadı.</p>
+        <p class="muted small">YouTube Data API anahtarı Ayarlar bölümüne girilmelidir.</p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="settingsDialog">
+    <form method="dialog" id="settingsForm">
+      <h2>Ayarlar</h2>
+      <label>YouTube Data API Key
+        <input id="apiKey" type="password" autocomplete="off" placeholder="AIza...">
+      </label>
+      <label>Reklam süresi (saniye)
+        <input id="adSeconds" type="number" min="1" max="300" value="30">
+      </label>
+      <div class="dialog-actions">
+        <button value="cancel" class="secondary">İptal</button>
+        <button value="save" class="primary">Kaydet</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="app.js"></script>
+</body>
+</html>
