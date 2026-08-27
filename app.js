@@ -1,11 +1,9 @@
 /* =========================================================
-   AYARLAR — diziler ve reklam videosu burada
+   AYARLAR — diziler burada
    ========================================================= */
 const CONFIG = {
-  AD_VIDEO_ID: "UgFdtIkDvSU",
-  DEFAULT_AD_SECONDS: 30,
   SHOWS: [
-    { name: "Oggy",              playlistId: "PLTLXNxXgTfEz5rZnXpx9uPx8LbENHN3_A" },
+    { name: "Oggy",             playlistId: "PLTLXNxXgTfEz5rZnXpx9uPx8LbENHN3_A" },
     { name: "Esrarengiz Kasaba", playlistId: "PLO7jGcCLf31VzYNKRuiGNjaIpS8Kb_fGB" },
     { name: "Doraemon",          playlistId: "PLCxWTrC_hNKNGoehF-TGH89pzp2FGySHx" },
     { name: "4. Çizgi Film",     playlistId: "PL3SPOx9gE-q0RtN0a9RP4vtOyB48w89Oz" },
@@ -14,23 +12,20 @@ const CONFIG = {
 };
 
 const LS_API_KEY = "marathon_api_key";
-const LS_AD_SECONDS = "marathon_ad_seconds";
 const LS_PROGRESS = "marathon_progress";
 
 /* ---------- state ---------- */
 let player;
-let shows = [];            // { name, units:[{title, videoIds:[]}], unitIndex }
+let shows = [];            
 let showsLoaded = false;
 let rotationIndex = 0;
 let currentQueue = [];
 let currentShowName = "";
 let currentUnitTitle = "";
-let mode = null;           // 'episode' | 'ad' | null
-let adInterval = null;
-let adSecondsLeft = 0;
+let mode = null;           
 let started = false;
 let autosaveInterval = null;
-let nextIndex = 0;         // rastgele seçilmiş bir sonraki dizi
+let nextIndex = 0;         
 
 function randomShowIndex() {
   return Math.floor(Math.random() * shows.length);
@@ -41,7 +36,6 @@ const el = {
   settingsBtn: document.getElementById('settingsBtn'),
   settingsDialog: document.getElementById('settingsDialog'),
   apiKey: document.getElementById('apiKey'),
-  adSeconds: document.getElementById('adSeconds'),
   startBtn: document.getElementById('startBtn'),
   pauseBtn: document.getElementById('pauseBtn'),
   nextBtn: document.getElementById('nextBtn'),
@@ -56,11 +50,47 @@ const el = {
 
 /* ---------- helpers ---------- */
 function getApiKey() { return localStorage.getItem(LS_API_KEY) || ""; }
-function getAdSeconds() {
-  const v = parseInt(localStorage.getItem(LS_AD_SECONDS), 10);
-  return Number.isFinite(v) && v > 0 ? v : CONFIG.DEFAULT_AD_SECONDS;
-}
 function setStatus(msg) { el.status.textContent = msg; }
+
+/* ---------- REKLAMSIZ VİDEO AKIŞ MOTORU ---------- */
+async function getAdFreeStreamUrl(videoId) {
+  try {
+    const response = await fetch(`https://kavin.rocks${videoId}`);
+    if (!response.ok) throw new Error("Akış alınamadı");
+    const data = await response.json();
+    if (data.hls) return data.hls;
+    if (data.videoStreams && data.videoStreams.length > 0) return data.videoStreams[0].url;
+    throw new Error("Kaynak yok");
+  } catch (error) {
+    console.error("Hata:", error);
+    return `https://kavin.rocks${encodeURIComponent(videoId)}`;
+  }
+}
+
+function initSmartTvPlayer() {
+  player = document.getElementById('player');
+  player.getCurrentTime = function() { return player.currentTime || 0; };
+  player.getVideoData = function() { return { video_id: player.dataset.currentVideoId }; };
+  player.onended = function() {
+    if (mode === 'episode') playCurrentQueueVideo();
+  };
+}
+
+async function loadVideoByIdHTML5(options) {
+  const videoId = typeof options === 'string' ? options : options.videoId;
+  const startSeconds = options.startSeconds || 0;
+  setStatus("Reklamlar temizleniyor…");
+  player.dataset.currentVideoId = videoId;
+  const adFreeUrl = await getAdFreeStreamUrl(videoId);
+  player.src = adFreeUrl;
+  player.load();
+  player.oncanplay = function() {
+    if (startSeconds > 0) player.currentTime = startSeconds;
+    player.play().catch(err => console.log(err));
+    setStatus("Oynatılıyor.");
+    player.oncanplay = null;
+  };
+}
 
 /* ---------- progress save / resume ---------- */
 function getSavedProgress() {
@@ -106,20 +136,20 @@ function resumeFromProgress(saved) {
   mode = 'episode';
   started = true;
 
-  el.nowTitle.textContent = `${currentShowName} — ${currentUnitTitle}`;
+  el.nowTitle.textContent = `${currentShowName} —${currentUnitTitle}`;
   el.nextTitle.textContent = shows[nextIndex]?.name || "—";
   el.adPanel.classList.add('hidden');
   renderQueuePanel();
   highlightActiveShow();
 
   if (saved.currentVideoId) {
-    player.loadVideoById({ videoId: saved.currentVideoId, startSeconds: saved.currentTime || 0 });
+    loadVideoByIdHTML5({ videoId: saved.currentVideoId, startSeconds: saved.currentTime || 0 });
   } else {
     playCurrentQueueVideo();
   }
 }
 
-/* ---------- queue panel (dizi sırası) ---------- */
+/* ---------- queue panel ---------- */
 function renderQueuePanel() {
   el.queue.innerHTML = "";
   CONFIG.SHOWS.forEach((s, idx) => {
@@ -129,6 +159,7 @@ function renderQueuePanel() {
     el.queue.appendChild(item);
   });
 }
+
 function highlightActiveShow() {
   const items = el.queue.querySelectorAll('.queue-item');
   items.forEach((it, idx) => it.classList.toggle('active', idx === rotationIndex));
@@ -139,7 +170,7 @@ async function fetchPlaylistItems(playlistId, apiKey) {
   let items = [];
   let pageToken = "";
   do {
-    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&pageToken=${pageToken}&key=${apiKey}`;
+    const url = `https://googleapis.com${playlistId}&pageToken=${pageToken}&key=${apiKey}`;
     const res = await fetch(url);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -158,8 +189,6 @@ async function fetchPlaylistItems(playlistId, apiKey) {
   return items;
 }
 
-// "... (1/6)", "... (2/6)" gibi parçaları veya zincirleme bölümleri
-// tek bir birim olarak grupla — böylece aralarına reklam girmez.
 function groupIntoUnits(items) {
   const units = [];
   let i = 0;
@@ -203,23 +232,6 @@ async function loadAllShows(apiKey) {
   setStatus("Hazır.");
 }
 
-/* ---------- YouTube IFrame player ---------- */
-function onYouTubeIframeAPIReady() {
-  player = new YT.Player('player', {
-    height: '100%', width: '100%',
-    host: 'https://www.youtube-nocookie.com',
-    playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3 },
-    events: { onStateChange: onPlayerStateChange }
-  });
-}
-
-function onPlayerStateChange(e) {
-  if (e.data === YT.PlayerState.ENDED) {
-    if (mode === 'episode') playCurrentQueueVideo();
-    else if (mode === 'ad') finishAd();
-  }
-}
-
 /* ---------- marathon logic ---------- */
 function startMarathon() {
   started = true;
@@ -241,40 +253,17 @@ function playNextShowUnit() {
   currentShowName = show.name;
   currentUnitTitle = unit.title;
   mode = 'episode';
-  el.nowTitle.textContent = `${show.name} — ${unit.title}`;
+  el.nowTitle.textContent = `${show.name} —${unit.title}`;
   el.nextTitle.textContent = shows[nextIndex]?.name || "—";
   el.adPanel.classList.add('hidden');
   playCurrentQueueVideo();
 }
 
 function playCurrentQueueVideo() {
-  if (currentQueue.length === 0) { startAd(); return; }
+  if (currentQueue.length === 0) { advanceRotation(); return; }
   const vid = currentQueue.shift();
-  player.loadVideoById(vid);
+  loadVideoByIdHTML5(vid);
   saveProgress();
-}
-
-function startAd() {
-  mode = 'ad';
-  adSecondsLeft = getAdSeconds();
-  el.adCountdown.textContent = adSecondsLeft;
-  el.adPanel.classList.remove('hidden');
-  player.loadVideoById(CONFIG.AD_VIDEO_ID);
-
-  clearInterval(adInterval);
-  adInterval = setInterval(() => {
-    adSecondsLeft--;
-    el.adCountdown.textContent = Math.max(adSecondsLeft, 0);
-    if (adSecondsLeft <= 0) finishAd();
-  }, 1000);
-}
-
-function finishAd() {
-  if (mode !== 'ad') return;
-  clearInterval(adInterval);
-  mode = null;
-  el.adPanel.classList.add('hidden');
-  advanceRotation();
 }
 
 function advanceRotation() {
@@ -286,15 +275,12 @@ function advanceRotation() {
 /* ---------- settings dialog ---------- */
 el.settingsBtn.addEventListener('click', () => {
   el.apiKey.value = getApiKey();
-  el.adSeconds.value = getAdSeconds();
   el.settingsDialog.showModal();
 });
 
 el.settingsDialog.addEventListener('close', () => {
   if (el.settingsDialog.returnValue === 'save') {
     localStorage.setItem(LS_API_KEY, el.apiKey.value.trim());
-    const secs = parseInt(el.adSeconds.value, 10);
-    localStorage.setItem(LS_AD_SECONDS, Number.isFinite(secs) && secs > 0 ? secs : CONFIG.DEFAULT_AD_SECONDS);
     setStatus(getApiKey() ? "API anahtarı ayarlı. Başlat'a basabilirsin." : "API anahtarı ayarlanmadı.");
   }
 });
@@ -327,25 +313,24 @@ el.startBtn.addEventListener('click', async () => {
 });
 
 el.pauseBtn.addEventListener('click', () => {
-  if (!player || !player.getPlayerState) return;
-  if (player.getPlayerState() === YT.PlayerState.PLAYING) {
-    player.pauseVideo();
+  if (!player) return;
+  if (!player.paused) {
+    player.pause();
     el.pauseBtn.textContent = '▶ Devam';
   } else {
-    player.playVideo();
+    player.play().catch(err => console.log(err));
     el.pauseBtn.textContent = '⏸ Duraklat';
   }
 });
 
 el.nextBtn.addEventListener('click', () => {
   if (!started) return;
-  if (mode === 'ad') finishAd();
-  else { currentQueue = []; startAd(); }
+  currentQueue = [];
+  advanceRotation();
   saveProgress();
 });
 
 el.resetBtn.addEventListener('click', () => {
-  clearInterval(adInterval);
   clearInterval(autosaveInterval);
   clearProgress();
   mode = null;
@@ -358,26 +343,29 @@ el.resetBtn.addEventListener('click', () => {
   el.pauseBtn.textContent = "⏸ Duraklat";
   el.startBtn.textContent = "▶ Maratonu Başlat";
   renderQueuePanel();
-  if (player && player.stopVideo) player.stopVideo();
+  if (player) {
+    player.pause();
+    player.src = "";
+  }
   started = false;
   setStatus(showsLoaded ? "Baştan başlamak için Başlat'a bas." : "API anahtarı ayarlanmadı.");
 });
 
-/* Sekme kapanırken / arka plana giderken kaldığı yeri kaydet */
 window.addEventListener('beforeunload', saveProgress);
+
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') saveProgress();
 });
 
 /* ---------- init ---------- */
 document.addEventListener('DOMContentLoaded', () => {
+  initSmartTvPlayer();
   renderQueuePanel();
   const hasKey = !!getApiKey();
   const saved = getSavedProgress();
   if (saved) {
     el.startBtn.textContent = "▶ Kaldığın Yerden Devam Et";
-    el.nowTitle.textContent = `${saved.currentShowName || ""} — ${saved.currentUnitTitle || ""}`;
+    el.nowTitle.textContent = `${saved.currentShowName \vert{}\vert{} ""} — ${saved.currentUnitTitle || ""}`;
   }
   setStatus(hasKey ? (saved ? "Kaldığın yerden devam etmeye hazır." : "API anahtarı ayarlı. Başlat'a basabilirsin.") : "API anahtarı ayarlanmadı.");
 });
-   
