@@ -56,37 +56,46 @@ function setStatus(msg) { el.status.textContent = msg; }
    ÇÖKMEYEN ÇOKLU SUNUCU REKLAMSIZ VİDEO MOTORU (HTML5)
    ========================================================= */
 async function getAdFreeStreamUrl(videoId) {
-  const pipedInstances = [
-    "https://kavin.rocks",
-    "https://cfe.re",
-    "https://r4fo.com",
-    "https://looleh.xyz"
+  const streamApis = [
+    { type: 'piped', url: 'https://pipedapi.kavin.rocks' },
+    { type: 'piped', url: 'https://api.piped.privacydev.net' },
+    { type: 'piped', url: 'https://piped-api.garudalinux.org' },
+    { type: 'invidious', url: 'https://inv.thepixora.com/api/v1/videos/' },
+    { type: 'invidious', url: 'https://inv.nadeko.net/api/v1/videos/' }
   ];
 
-  for (const baseApi of pipedInstances) {
+  for (const api of streamApis) {
     try {
-      const response = await fetch(`${baseApi}/streams/${videoId}`);
-      if (!response.ok) continue;
-      const data = await response.json();
-      if (data.hls) return data.hls;
-      if (data.videoStreams && data.videoStreams.length > 0) {
-        return data.videoStreams[0].url;
+      if (api.type === 'piped') {
+        const response = await fetch(`${api.url}/streams/${videoId}`);
+        if (!response.ok) continue;
+        const data = await response.json();
+        if (data.hls) return data.hls;
+        if (data.videoStreams && data.videoStreams.length > 0) {
+          return data.videoStreams[0].url;
+        }
+      } else if (api.type === 'invidious') {
+        const response = await fetch(`${api.url}${videoId}`);
+        if (!response.ok) continue;
+        const data = await response.json();
+        if (data.formatStreams && data.formatStreams.length > 0) {
+          return data.formatStreams[data.formatStreams.length - 1].url;
+        }
       }
     } catch (err) {
-      console.warn(`${baseApi} sunucusu atlandı, sonraki deneniyor...`);
+      console.warn(`${api.url} sunucusu atlandı, sonraki deneniyor...`);
     }
   }
-  return `https://nadeko.net/latest/${videoId}&itag=22`;
+
+  return `https://inv.nadeko.net/latest/${videoId}&itag=22`;
 }
 
 function initSmartTvPlayer() {
   player = document.getElementById('player');
   
-  // YT.Player metot simülasyonu
   player.getCurrentTime = function() { return player.currentTime || 0; };
   player.getVideoData = function() { return { video_id: player.dataset.currentVideoId }; };
 
-  // HTML5 Video bitiş kontrolü
   player.onended = function() {
     if (mode === 'episode') playCurrentQueueVideo();
   };
