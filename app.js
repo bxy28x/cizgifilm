@@ -53,41 +53,27 @@ function getApiKey() { return localStorage.getItem(LS_API_KEY) || ""; }
 function setStatus(msg) { el.status.textContent = msg; }
 
 /* =========================================================
-   ÇÖKMEYEN ÇOKLU SUNUCU REKLAMSIZ VİDEO MOTORU (HTML5)
+   REKLAMSIZ VE CORS ENGELİNE TAKILMAYAN VİDEO MOTORU
    ========================================================= */
 async function getAdFreeStreamUrl(videoId) {
-  const streamApis = [
-    { type: 'piped', url: 'https://pipedapi.kavin.rocks' },
-    { type: 'piped', url: 'https://api.piped.privacydev.net' },
-    { type: 'piped', url: 'https://piped-api.garudalinux.org' },
-    { type: 'invidious', url: 'https://inv.thepixora.com/api/v1/videos/' },
-    { type: 'invidious', url: 'https://inv.nadeko.net/api/v1/videos/' }
+  // CORS engeline takılmayan ve ham video veren kararlı mirror API'ler
+  const instances = [
+    `https://inv.nadeko.net/latest/${videoId}?local=true`,
+    `https://invidious.nerdvpn.de/latest/${videoId}?local=true`,
+    `https://yewtu.be/latest/${videoId}?local=true`
   ];
 
-  for (const api of streamApis) {
+  for (const url of instances) {
     try {
-      if (api.type === 'piped') {
-        const response = await fetch(`${api.url}/streams/${videoId}`);
-        if (!response.ok) continue;
-        const data = await response.json();
-        if (data.hls) return data.hls;
-        if (data.videoStreams && data.videoStreams.length > 0) {
-          return data.videoStreams[0].url;
-        }
-      } else if (api.type === 'invidious') {
-        const response = await fetch(`${api.url}${videoId}`);
-        if (!response.ok) continue;
-        const data = await response.json();
-        if (data.formatStreams && data.formatStreams.length > 0) {
-          return data.formatStreams[data.formatStreams.length - 1].url;
-        }
-      }
-    } catch (err) {
-      console.warn(`${api.url} sunucusu atlandı, sonraki deneniyor...`);
+      const res = await fetch(url, { method: 'HEAD' });
+      if (res.ok) return url;
+    } catch (e) {
+      console.warn("Sunucu deneniyor...", url);
     }
   }
 
-  return `https://inv.nadeko.net/latest/${videoId}&itag=22`;
+  // Varsayılan kesintisiz yedek
+  return `https://inv.nadeko.net/latest/${videoId}?local=true`;
 }
 
 function initSmartTvPlayer() {
@@ -114,9 +100,16 @@ async function loadVideoByIdHTML5(options) {
 
   player.oncanplay = function() {
     if (startSeconds > 0) player.currentTime = startSeconds;
-    player.play().catch(err => console.log("Oynatma hatası:", err));
+    player.play().catch(err => console.log("Oynatma uyarısı:", err));
     setStatus("Oynatılıyor.");
     player.oncanplay = null; 
+  };
+  
+  // Oynatma hatası alırsa sonraki sunucuya düşmesi için hata yönetimi
+  player.onerror = function() {
+    console.warn("Stream yüklenemedi, yedek stream deneniyor...");
+    player.src = `https://invidious.nerdvpn.de/latest/${videoId}?local=true`;
+    player.load();
   };
 }
 
