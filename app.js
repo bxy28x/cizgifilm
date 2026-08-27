@@ -1,9 +1,9 @@
 /* =========================================================
-   AYARLAR — diziler burada
+   AYARLAR — diziler
    ========================================================= */
 const CONFIG = {
   SHOWS: [
-    { name: "Oggy",             playlistId: "PLTLXNxXgTfEz5rZnXpx9uPx8LbENHN3_A" },
+    { name: "Oggy",              playlistId: "PLTLXNxXgTfEz5rZnXpx9uPx8LbENHN3_A" },
     { name: "Esrarengiz Kasaba", playlistId: "PLO7jGcCLf31VzYNKRuiGNjaIpS8Kb_fGB" },
     { name: "Doraemon",          playlistId: "PLCxWTrC_hNKNGoehF-TGH89pzp2FGySHx" },
     { name: "4. Çizgi Film",     playlistId: "PL3SPOx9gE-q0RtN0a9RP4vtOyB48w89Oz" },
@@ -22,7 +22,7 @@ let rotationIndex = 0;
 let currentQueue = [];
 let currentShowName = "";
 let currentUnitTitle = "";
-let mode = null;           
+let mode = null;           // 'episode' | 'ad' | null
 let started = false;
 let autosaveInterval = null;
 let nextIndex = 0;         
@@ -52,25 +52,41 @@ const el = {
 function getApiKey() { return localStorage.getItem(LS_API_KEY) || ""; }
 function setStatus(msg) { el.status.textContent = msg; }
 
-/* ---------- REKLAMSIZ VİDEO AKIŞ MOTORU ---------- */
+/* =========================================================
+   ÇÖKMEYEN ÇOKLU SUNUCU REKLAMSIZ VİDEO MOTORU (HTML5)
+   ========================================================= */
 async function getAdFreeStreamUrl(videoId) {
-  try {
-    const response = await fetch(`https://kavin.rocks${videoId}`);
-    if (!response.ok) throw new Error("Akış alınamadı");
-    const data = await response.json();
-    if (data.hls) return data.hls;
-    if (data.videoStreams && data.videoStreams.length > 0) return data.videoStreams[0].url;
-    throw new Error("Kaynak yok");
-  } catch (error) {
-    console.error("Hata:", error);
-    return `https://kavin.rocks${encodeURIComponent(videoId)}`;
+  const pipedInstances = [
+    "https://kavin.rocks",
+    "https://cfe.re",
+    "https://r4fo.com",
+    "https://looleh.xyz"
+  ];
+
+  for (const baseApi of pipedInstances) {
+    try {
+      const response = await fetch(`${baseApi}/streams/${videoId}`);
+      if (!response.ok) continue;
+      const data = await response.json();
+      if (data.hls) return data.hls;
+      if (data.videoStreams && data.videoStreams.length > 0) {
+        return data.videoStreams[0].url;
+      }
+    } catch (err) {
+      console.warn(`${baseApi} sunucusu atlandı, sonraki deneniyor...`);
+    }
   }
+  return `https://nadeko.net/latest/${videoId}&itag=22`;
 }
 
 function initSmartTvPlayer() {
   player = document.getElementById('player');
+  
+  // YT.Player metot simülasyonu
   player.getCurrentTime = function() { return player.currentTime || 0; };
   player.getVideoData = function() { return { video_id: player.dataset.currentVideoId }; };
+
+  // HTML5 Video bitiş kontrolü
   player.onended = function() {
     if (mode === 'episode') playCurrentQueueVideo();
   };
@@ -78,17 +94,20 @@ function initSmartTvPlayer() {
 
 async function loadVideoByIdHTML5(options) {
   const videoId = typeof options === 'string' ? options : options.videoId;
-  const startSeconds = options.startSeconds || 0;
+  const startSeconds = options ? (options.startSeconds || 0) : 0;
+  
   setStatus("Reklamlar temizleniyor…");
   player.dataset.currentVideoId = videoId;
+
   const adFreeUrl = await getAdFreeStreamUrl(videoId);
   player.src = adFreeUrl;
   player.load();
+
   player.oncanplay = function() {
     if (startSeconds > 0) player.currentTime = startSeconds;
-    player.play().catch(err => console.log(err));
+    player.play().catch(err => console.log("Oynatma hatası:", err));
     setStatus("Oynatılıyor.");
-    player.oncanplay = null;
+    player.oncanplay = null; 
   };
 }
 
@@ -136,7 +155,7 @@ function resumeFromProgress(saved) {
   mode = 'episode';
   started = true;
 
-  el.nowTitle.textContent = `${currentShowName} —${currentUnitTitle}`;
+  el.nowTitle.textContent = `${currentShowName} — ${currentUnitTitle}`;
   el.nextTitle.textContent = shows[nextIndex]?.name || "—";
   el.adPanel.classList.add('hidden');
   renderQueuePanel();
@@ -149,7 +168,7 @@ function resumeFromProgress(saved) {
   }
 }
 
-/* ---------- queue panel ---------- */
+/* ---------- queue panel (dizi sırası) ---------- */
 function renderQueuePanel() {
   el.queue.innerHTML = "";
   CONFIG.SHOWS.forEach((s, idx) => {
@@ -170,7 +189,7 @@ async function fetchPlaylistItems(playlistId, apiKey) {
   let items = [];
   let pageToken = "";
   do {
-    const url = `https://googleapis.com${playlistId}&pageToken=${pageToken}&key=${apiKey}`;
+    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&pageToken=${pageToken}&key=${apiKey}`;
     const res = await fetch(url);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -253,7 +272,7 @@ function playNextShowUnit() {
   currentShowName = show.name;
   currentUnitTitle = unit.title;
   mode = 'episode';
-  el.nowTitle.textContent = `${show.name} —${unit.title}`;
+  el.nowTitle.textContent = `${show.name} — ${unit.title}`;
   el.nextTitle.textContent = shows[nextIndex]?.name || "—";
   el.adPanel.classList.add('hidden');
   playCurrentQueueVideo();
@@ -351,8 +370,8 @@ el.resetBtn.addEventListener('click', () => {
   setStatus(showsLoaded ? "Baştan başlamak için Başlat'a bas." : "API anahtarı ayarlanmadı.");
 });
 
+/* Sekme kapanırken / arka plana giderken kaldığı yeri kaydet */
 window.addEventListener('beforeunload', saveProgress);
-
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') saveProgress();
 });
@@ -365,7 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const saved = getSavedProgress();
   if (saved) {
     el.startBtn.textContent = "▶ Kaldığın Yerden Devam Et";
-    el.nowTitle.textContent = `${saved.currentShowName \vert{}\vert{} ""} — ${saved.currentUnitTitle || ""}`;
+    el.nowTitle.textContent = `${saved.currentShowName || ""} — ${saved.currentUnitTitle || ""}`;
   }
   setStatus(hasKey ? (saved ? "Kaldığın yerden devam etmeye hazır." : "API anahtarı ayarlı. Başlat'a basabilirsin.") : "API anahtarı ayarlanmadı.");
 });
