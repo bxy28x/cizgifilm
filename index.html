@@ -1,190 +1,79 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Çizgi Film Maratonu</title>
-  <style>
-    /* TV Uyumluluğu ve Sade Tasarım */
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #111;
-      color: #fff;
-      font-family: Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      overflow: hidden;
-    }
-    header {
-      padding: 15px;
-      background: #222;
-      text-align: center;
-      font-size: 1.2rem;
-      border-bottom: 2px solid #333;
-    }
-    .main-container {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-    .player-area {
-      flex: 3;
-      background: #000;
-      position: relative;
-    }
-    /* Smart TV donanım ivmesini kullanan video etiketi */
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-    }
-    .sidebar {
-      flex: 1;
-      background: #1a1a1a;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      border-left: 2px solid #333;
-    }
-    .info-panel {
-      margin-bottom: 20px;
-    }
-    .info-panel h2 {
-      margin: 5px 0;
-      font-size: 1.1rem;
-      color: #00ffcc;
-    }
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-    button {
-      flex: 1;
-      min-width: 100px;
-      padding: 12px;
-      font-size: 0.9rem;
-      font-weight: bold;
-      border: none;
-      border-radius: 5px;
-      background: #333;
-      color: #fff;
-      cursor: pointer;
-    }
-    button:hover, button:focus {
-      background: #00ffcc;
-      color: #000;
-      outline: none;
-    }
-    .queue-container {
-      flex: 1;
-      overflow-y: auto;
-    }
-    .queue-item {
-      padding: 10px;
-      margin-bottom: 5px;
-      background: #252525;
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .queue-item.active {
-      background: #00ffcc;
-      color: #000;
-      font-weight: bold;
-    }
-    .dot {
-      width: 8px;
-      height: 8px;
-      background: #aaa;
-      border-radius: 50%;
-    }
-    .queue-item.active .dot {
-      background: #000;
-    }
-    .hidden {
-      display: none !important;
-    }
-    dialog {
-      background: #222;
-      color: #fff;
-      border: 2px solid #333;
-      border-radius: 8px;
-      padding: 20px;
-      width: 300px;
-    }
-    dialog input {
-      width: 100%;
-      padding: 8px;
-      margin: 10px 0;
-      background: #333;
-      border: 1px solid #444;
-      color: #fff;
-    }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Çizgi Film Maratonu — Smart TV</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-  <header>
-    🎬 Çizgi Film Maratonu Player
-  </header>
-
-  <div class="main-container">
-    <!-- Video Oynatıcı Alanı -->
-    <div class="player-area">
-      <video id="player" controls autoplay playsinline></video>
-      
-      <!-- Eski reklam paneli uyumluluk için duruyor -->
-      <div id="adPanel" class="hidden" style="position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); display:flex; flex-direction:column; justify-content:center; align-items:center;">
-        <h2>📢 Reklam Arası</h2>
-        <p>Sonraki bölüme geçiliyor… <span id="adCountdown">30</span> sn</p>
+  <main>
+    <header>
+      <div>
+        <div class="eyebrow">MARATON PLAYER</div>
+        <h1>Çizgi Film Maratonu</h1>
+        <p class="muted">Bölüm bitince sıradaki diziye otomatik geçer.</p>
       </div>
-    </div>
+      <button id="settingsBtn" class="secondary" tabindex="1">⚙ Ayarlar</button>
+    </header>
 
-    <!-- Yan Menü (Bilgi ve Kontroller) -->
-    <div class="sidebar">
-      <div class="info-panel">
-        <div>Şimdi Oynatılan:</div>
-        <h2 id="nowTitle">Maraton hazır</h2>
-        <div style="margin-top: 10px;">Sıradaki Dizi:</div>
-        <h2 id="nextTitle">—</h2>
+    <section class="player-card">
+      <!-- YouTube iframe yerine gelen TV dostu saf HTML5 video etiketimiz -->
+      <div class="player-area" style="position: relative; width: 100%; aspect-ratio: 16/9; background: #000;">
+        <video id="player" controls autoplay playsinline style="width: 100%; height: 100%; background: #000;"></video>
+        
+        <div id="adPanel" class="ad-panel hidden" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10;">
+          <div class="ad-title">📢 Reklam arası</div>
+          <div>Sonraki bölüme geçiliyor… <strong id="adCountdown">30</strong> sn</div>
+        </div>
       </div>
 
-      <div class="controls">
-        <button id="startBtn">▶ Maratonu Başlat</button>
-        <button id="pauseBtn">⏸ Duraklat</button>
-        <button id="nextBtn">⏭ Sonraki</button>
-        <button id="resetBtn">↻ Baştan</button>
-        <button id="settingsBtn">⚙ Ayarlar</button>
+      <div class="now">
+        <div>
+          <span class="label">Şimdi</span>
+          <h2 id="nowTitle">Maraton hazır</h2>
+        </div>
+        <div class="next">
+          <span class="label">Sıradaki</span>
+          <strong id="nextTitle">—</strong>
+        </div>
       </div>
+    </section>
 
-      <div style="margin-bottom: 5px; font-size: 0.85rem; color: #aaa;">Maraton Sırası:</div>
-      <div class="queue-container" id="queue"></div>
+    <section class="controls">
+      <button id="startBtn" class="primary" tabindex="2">▶ Maratonu Başlat</button>
+      <button id="pauseBtn" class="secondary" tabindex="3">⏸ Duraklat</button>
+      <button id="nextBtn" class="secondary" tabindex="4">⏭ Sonraki</button>
+      <button id="resetBtn" class="danger" tabindex="5">↻ Baştan</button>
+    </section>
 
-      <div style="margin-top: 15px; font-size: 0.85rem; color: #888;">
-        Durum: <span id="status">Yükleniyor...</span>
+    <section class="info-grid">
+      <div class="panel">
+        <span class="label">Maraton sırası</span>
+        <div id="queue"></div>
       </div>
-    </div>
-  </div>
+      <div class="panel">
+        <span class="label">Durum</span>
+        <p id="status">API anahtarı ayarlanmadı.</p>
+        <p class="muted small">YouTube Data API anahtarı Ayarlar bölümüne girilmelidir.</p>
+      </div>
+    </section>
+  </main>
 
-  <!-- Ayarlar Penceresi -->
   <dialog id="settingsDialog">
-    <form method="dialog">
-      <h3>YouTube API Ayarı</h3>
-      <label for="apiKey">YouTube Data API Key:</label>
-      <input type="text" id="apiKey" placeholder="AIzaSy...">
-      <div style="display: flex; gap: 10px; margin-top: 15px;">
-        <button value="cancel" style="background:#555;">İptal</button>
-        <button value="save" style="background:#00ffcc; color:#000;">Kaydet</button>
+    <form method="dialog" id="settingsForm">
+      <h2>Ayarlar</h2>
+      <label>YouTube Data API Key
+        <input id="apiKey" type="password" autocomplete="off" placeholder="AIza..." tabindex="6">
+      </label>
+      <div class="dialog-actions">
+        <button value="cancel" class="secondary" tabindex="7">İptal</button>
+        <button value="save" class="primary" tabindex="8">Kaydet</button>
       </div>
     </form>
   </dialog>
 
-  <!-- Önceki adımda güncellediğimiz app.js dosyanızı buraya bağlıyorsunuz -->
+  <!-- YouTube IFrame API script'i kaldırıldı; sadece güncel app.js çağrılıyor -->
   <script src="app.js"></script>
 </body>
 </html>
