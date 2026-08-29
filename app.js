@@ -1,7 +1,7 @@
 /* =========================================================
    FLASK BACKEND İLE ENTEGRE MARATON İSTEMCİSİ
    ========================================================= */
-const API_BASE_URL = "http://localhost:5000"; // Termux IP'si kullanıyorsan örn: "http://192.168.1.50:5000"
+const API_BASE_URL = "http://192.168.1.105:5000"; // Termux IP'si kullanıyorsan örn: "http://192.168.1.50:5000"
 const LS_PROGRESS = "marathon_progress";
 
 let videoElement = null;
