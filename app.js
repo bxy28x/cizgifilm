@@ -1,7 +1,7 @@
 /* =========================================================
    FLASK BACKEND İLE ENTEGRE MARATON İSTEMCİSİ
    ========================================================= */
-const API_BASE_URL = "http://192.168.1.105:5000";
+const API_BASE_URL = "http://192.168.1.110:5000";
 const LS_PROGRESS = "marathon_progress";
 
 /* ---------- state ---------- */
