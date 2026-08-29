@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Çizgi Film Maratonu — Smart TV</title>
   <link rel="stylesheet" href="style.css">
-  <!-- YouTube IFrame API -->
-  <script src="https://www.youtube.com/iframe_api"></script>
+  <!-- M3U8 / HLS Yayın Desteği (Safari dışı tarayıcılar için) -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
   <main>
@@ -21,8 +21,8 @@
 
     <section class="player-card">
       <div class="player-area" style="position: relative; width: 100%; aspect-ratio: 16/9; background: #000;">
-        <!-- YouTube No-Cookie Oynatıcı Yuvası -->
-        <div id="player" style="width: 100%; height: 100%;"></div>
+        <!-- HTML5 Video Stream Oynatıcı -->
+        <video id="videoPlayer" controls style="width: 100%; height: 100%; object-fit: contain;"></video>
         
         <div id="adPanel" class="ad-panel hidden" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10;">
           <div class="ad-title">📢 Reklam arası</div>
@@ -56,8 +56,8 @@
       </div>
       <div class="panel">
         <span class="label">Durum</span>
-        <p id="status">API anahtarı ayarlanmadı.</p>
-        <p class="muted small">YouTube Data API anahtarı Ayarlar bölümüne girilmelidir.</p>
+        <p id="status">Sunucuya bağlanmaya hazır.</p>
+        <p class="muted small">Video akışları yerel Flask API üzerinden çekilmektedir.</p>
       </div>
     </section>
   </main>
@@ -65,8 +65,8 @@
   <dialog id="settingsDialog">
     <form method="dialog" id="settingsForm">
       <h2>Ayarlar</h2>
-      <label>YouTube Data API Key
-        <input id="apiKey" type="password" autocomplete="off" placeholder="AIza..." tabindex="6">
+      <label>Flask API Sunucu Adresi
+        <input id="apiServerUrl" type="text" autocomplete="off" placeholder="http://localhost:5000" value="http://localhost:5000" tabindex="6">
       </label>
       <div class="dialog-actions">
         <button value="cancel" class="secondary" tabindex="7">İptal</button>
