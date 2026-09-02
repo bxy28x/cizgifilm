@@ -7,6 +7,7 @@ import requests
 
 app = Flask(__name__)
 
+# Tüm kökenlere (Origins) izin ver
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 CONFIG = {
@@ -46,14 +47,16 @@ def fetch_single_playlist(show):
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(playlist_url, download=False)
-            if 'entries' in info:
+            if info and 'entries' in info:
                 for entry in info['entries']:
+                    if not entry:
+                        continue
                     v_id = entry.get('id')
                     v_title = entry.get('title')
                     if v_id and v_title and v_title not in ["[Private video]", "[Deleted video]"]:
                         videos.append({"id": v_id, "title": v_title})
     except Exception as e:
-        print(f"Playlist hatası ({show['name']}): {e}")
+        print(f"Playlist çekme hatası ({show['name']}): {e}")
         
     return {
         "name": show["name"],
@@ -62,15 +65,16 @@ def fetch_single_playlist(show):
     }
 
 def get_external_stream_fallback(video_id):
-    """Aktif Piped ve Invidious instances üzerinden MP4 adresi çeker."""
+    """Aktif Piped, Invidious ve Cobalt API örnekleri üzerinden MP4/M3U8 adresi çeker."""
     youtube_url = f"https://www.youtube.com/watch?v={video_id}"
 
-    # 1. Güncel ve Aktif Piped API Örnekleri
+    # 1. Piped API Örnekleri
     piped_instances = [
         "https://pipedapi.kavin.rocks",
         "https://api.piped.privacydev.net",
         "https://pipedapi.palvelu.org",
-        "https://piped-api.garudalinux.org"
+        "https://piped-api.garudalinux.org",
+        "https://pipedapi.mha.fi"
     ]
     
     for instance in piped_instances:
@@ -78,13 +82,17 @@ def get_external_stream_fallback(video_id):
             res = requests.get(f"{instance}/streams/{video_id}", timeout=3)
             if res.status_code == 200:
                 data = res.json()
+                # HLS Stream tercih et
+                if data.get('hls'):
+                    return data.get('hls')
+                # HLS yoksa direkt MP4 tercih et (hem video hem ses olan)
                 for stream in data.get('videoStreams', []):
                     if stream.get('url') and not stream.get('videoOnly'):
                         return stream.get('url')
         except Exception:
             continue
 
-    # 2. Güncel Invidious API Örnekleri
+    # 2. Invidious API Örnekleri
     invidious_instances = [
         "https://invidious.nerdvpn.de",
         "https://inv.nadeko.net",
@@ -108,7 +116,7 @@ def get_external_stream_fallback(video_id):
 def get_live_m3u8(video_id):
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
-    # iOS/Android Native Client taklidi
+    # iOS / Android Native Client taklidi ile direct stream çıkarma
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'quiet': True,
@@ -128,8 +136,9 @@ def get_live_m3u8(video_id):
             if url:
                 return url
     except Exception as e:
-        print(f"yt-dlp banlandı ({video_id}), alternatif servisler devreye giriyor...")
+        print(f"yt-dlp kısıtlamaya takıldı ({video_id}), yedek servisler deneniyor... Hata: {e}")
     
+    # yt-dlp başarısız olursa API yedeklerine başvur
     return get_external_stream_fallback(video_id)
 
 @app.route('/api/shows', methods=['GET', 'OPTIONS'])
@@ -152,13 +161,15 @@ def get_stream_link(video_id):
     try:
         stream_url = get_live_m3u8(video_id)
         if not stream_url:
-            # Fallback: Adres bulunamazsa doğrudan YouTube Embed yönlendirmesi
             return jsonify({
-                "videoId": video_id, 
-                "streamUrl": f"https://www.youtube.com/embed/{video_id}?autoplay=1",
-                "isEmbed": True
-            })
-        return jsonify({"videoId": video_id, "streamUrl": stream_url, "isEmbed": False})
+                "error": "Stream adresi bulunamadı",
+                "videoId": video_id
+            }), 404
+            
+        return jsonify({
+            "videoId": video_id, 
+            "streamUrl": stream_url
+        }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
