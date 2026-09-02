@@ -4,7 +4,6 @@
 const API_BASE_URL = "https://cizgifilm-1.onrender.com";
 const LS_PROGRESS = "marathon_progress";
 
-/* Localtunnel IP onay ekranını tamamen bypass eden varsayılan header */
 const TUNNEL_HEADERS = {
   "Bypass-Tunnel-Reminder": "true",
   "Accept": "application/json"
@@ -13,18 +12,19 @@ const TUNNEL_HEADERS = {
 /* ---------- state ---------- */
 let videoElement = null;
 let hlsInstance = null;
-let shows = [];            // { name, units:[{title, videoIds:[]}], unitIndex }
+let shows = [];            
 let showsLoaded = false;
 let rotationIndex = 0;
-let currentQueue = [];     // O anki birimin videoId listesi
+let currentQueue = [];     
 let currentShowName = "";
 let currentUnitTitle = "";
-let mode = null;           // 'episode' | 'ad' | null
+let mode = null;           
 let started = false;
 let autosaveInterval = null;
-let nextIndex = 0;         // Rastgele seçilmiş bir sonraki dizi
+let nextIndex = 0;         
 
 function randomShowIndex() {
+  if (!shows.length) return 0;
   return Math.floor(Math.random() * shows.length);
 }
 
@@ -42,8 +42,9 @@ const el = {
   status: document.getElementById('status'),
 };
 
-/* ---------- helpers ---------- */
-function setStatus(msg) { el.status.textContent = msg; }
+function setStatus(msg) { 
+  if (el.status) el.status.textContent = msg; 
+}
 
 /* ---------- progress save / resume ---------- */
 function getSavedProgress() {
@@ -92,11 +93,12 @@ function resumeFromProgress(saved) {
   renderQueuePanel();
   highlightActiveShow();
 
-  playCurrentQueueVideo();
+  playCurrentQueueVideo(saved.currentTime || 0);
 }
 
-/* ---------- queue panel (dizi sırası) ---------- */
+/* ---------- queue panel ---------- */
 function renderQueuePanel() {
+  if (!el.queue) return;
   el.queue.innerHTML = "";
   shows.forEach((s, idx) => {
     const item = document.createElement('div');
@@ -107,6 +109,7 @@ function renderQueuePanel() {
 }
 
 function highlightActiveShow() {
+  if (!el.queue) return;
   const items = el.queue.querySelectorAll('.queue-item');
   items.forEach((it, idx) => it.classList.toggle('active', idx === rotationIndex));
 }
@@ -133,7 +136,6 @@ async function loadAllShowsFromBackend() {
   setStatus("Playlistler başarıyla yüklendi.");
 }
 
-// Güvenli gruplama fonksiyonu (null/undefined başlık hatası almaz)
 function groupIntoUnits(videos) {
   const units = [];
   let i = 0;
@@ -183,9 +185,17 @@ function initVideoPlayer() {
   videoElement.addEventListener('ended', () => {
     if (mode === 'episode') playCurrentQueueVideo();
   });
+
+  videoElement.addEventListener('error', (e) => {
+    console.error("Video Oynatma Hatası:", e);
+    setStatus("Video oynatılamadı. Sonraki videoya geçiliyor...");
+    setTimeout(() => {
+      if (started) playCurrentQueueVideo();
+    }, 3000);
+  });
 }
 
-async function playCurrentQueueVideo() {
+async function playCurrentQueueVideo(startSeconds = 0) {
   if (currentQueue.length === 0) { 
     advanceRotation(); 
     return; 
@@ -198,42 +208,82 @@ async function playCurrentQueueVideo() {
     const res = await fetch(`${API_BASE_URL}/api/stream/${videoId}`, {
       headers: TUNNEL_HEADERS
     });
+    
+    if (!res.ok) throw new Error(`HTTP Hata: ${res.status}`);
+    
     const data = await res.json();
     
     if (data.streamUrl) {
       setStatus("Oynatılıyor.");
-      loadStream(data.streamUrl);
+      loadStream(data.streamUrl, startSeconds);
       saveProgress();
     } else {
       throw new Error("Stream URL boş döndü.");
     }
   } catch (err) {
     console.error(err);
-    setStatus("Video yüklenemedi, sonraki bölüme geçiliyor...");
-    setTimeout(playCurrentQueueVideo, 2000);
+    setStatus("Video yüklenemedi, 2 sn içinde sonraki bölüme geçiliyor...");
+    setTimeout(() => playCurrentQueueVideo(), 2000);
   }
 }
 
 function loadStream(url, startSeconds = 0) {
   if (!videoElement) initVideoPlayer();
 
-  if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+  // Var olan HLS örneğini temizle
+  if (hlsInstance) {
+    hlsInstance.destroy();
+    hlsInstance = null;
+  }
+
+  const isM3U8 = url.includes('.m3u8');
+
+  // 1. Safari / Native HLS Desteği
+  if (isM3U8 && videoElement.canPlayType('application/vnd.apple.mpegurl')) {
     videoElement.src = url;
-    videoElement.currentTime = startSeconds;
-    videoElement.play().catch(() => {});
-  } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-    if (hlsInstance) hlsInstance.destroy();
-    hlsInstance = new Hls();
+    videoElement.addEventListener('loadedmetadata', () => {
+      if (startSeconds > 0) videoElement.currentTime = startSeconds;
+      videoElement.play().catch(err => console.log("Autoplay engellendi:", err));
+    }, { once: true });
+  } 
+  // 2. Chrome/Firefox/Edge HLS.js Desteği
+  else if (isM3U8 && typeof Hls !== 'undefined' && Hls.isSupported()) {
+    hlsInstance = new Hls({
+      enableWorker: true,
+      lowLatencyMode: false,
+      xhrSetup: function (xhr) {
+        xhr.setRequestHeader("Bypass-Tunnel-Reminder", "true");
+      }
+    });
+
     hlsInstance.loadSource(url);
     hlsInstance.attachMedia(videoElement);
+
     hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-      videoElement.currentTime = startSeconds;
-      videoElement.play().catch(() => {});
+      if (startSeconds > 0) videoElement.currentTime = startSeconds;
+      videoElement.play().catch(err => console.log("Autoplay engellendi:", err));
     });
-  } else {
+
+    hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+      if (data.fatal) {
+        console.error("HLS Kritik Hata:", data.type);
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hlsInstance.startLoad();
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hlsInstance.recoverMediaError();
+        } else {
+          hlsInstance.destroy();
+          setStatus("Akış yüklenemedi. Sonraki bölüme geçiliyor...");
+          setTimeout(() => playCurrentQueueVideo(), 2000);
+        }
+      }
+    });
+  } 
+  // 3. Standart MP4 veya Doğrudan Video Linki
+  else {
     videoElement.src = url;
-    videoElement.currentTime = startSeconds;
-    videoElement.play().catch(() => {});
+    if (startSeconds > 0) videoElement.currentTime = startSeconds;
+    videoElement.play().catch(err => console.log("Autoplay engellendi:", err));
   }
 }
 
@@ -249,7 +299,10 @@ function startMarathon() {
 function playNextShowUnit() {
   highlightActiveShow();
   const show = shows[rotationIndex];
-  if (!show || show.units.length === 0) { advanceRotation(); return; }
+  if (!show || !show.units || show.units.length === 0) { 
+    advanceRotation(); 
+    return; 
+  }
 
   const unit = show.units[show.unitIndex];
   show.unitIndex = (show.unitIndex + 1) % show.units.length;
@@ -272,7 +325,7 @@ function advanceRotation() {
   playNextShowUnit();
 }
 
-/* ---------- Controls ---------- */
+/* ---------- Event Listeners ---------- */
 el.startBtn.addEventListener('click', async () => {
   el.startBtn.disabled = true;
   try {
@@ -314,6 +367,10 @@ el.nextBtn.addEventListener('click', () => {
 el.resetBtn.addEventListener('click', () => {
   clearInterval(autosaveInterval);
   clearProgress();
+  if (hlsInstance) {
+    hlsInstance.destroy();
+    hlsInstance = null;
+  }
   mode = null;
   currentQueue = [];
   rotationIndex = 0;
