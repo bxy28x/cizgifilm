@@ -1,18 +1,19 @@
 /* =========================================================
-   LOCALTUNNEL FLASK BACKEND İLE ENTEGRE MARATON İSTEMCİSİ
+   RENDER FLASK BACKEND İLE ENTEGRE MARATON İSTEMCİSİ
    ========================================================= */
 const API_BASE_URL = "https://cizgifilm-1.onrender.com";
 const LS_PROGRESS = "marathon_progress";
 
-const TUNNEL_HEADERS = {
-  "Bypass-Tunnel-Reminder": "true",
+const API_HEADERS = {
   "Accept": "application/json"
 };
 
 /* ---------- state ---------- */
 let videoElement = null;
+let iframeElement = null;
+let playerContainer = null;
 let hlsInstance = null;
-let shows = [];            
+let shows = [];        
 let showsLoaded = false;
 let rotationIndex = 0;
 let currentQueue = [];     
@@ -55,7 +56,8 @@ function getSavedProgress() {
 }
 
 function saveProgress() {
-  if (mode !== 'episode' || !videoElement) return;
+  if (mode !== 'episode') return;
+  const currentTime = videoElement ? (videoElement.currentTime || 0) : 0;
   const data = {
     rotationIndex,
     nextIndex,
@@ -63,7 +65,7 @@ function saveProgress() {
     currentShowName,
     currentUnitTitle,
     remainingQueue: currentQueue.slice(),
-    currentTime: videoElement.currentTime || 0,
+    currentTime: currentTime,
   };
   localStorage.setItem(LS_PROGRESS, JSON.stringify(data));
 }
@@ -119,7 +121,7 @@ async function loadAllShowsFromBackend() {
   setStatus("Sunucudan playlistler çekiliyor…");
   
   const response = await fetch(`${API_BASE_URL}/api/shows`, {
-    headers: TUNNEL_HEADERS
+    headers: API_HEADERS
   });
   
   if (!response.ok) throw new Error("Flask sunucusuna bağlanılamadı!");
@@ -177,10 +179,12 @@ function groupIntoUnits(videos) {
   return units;
 }
 
-/* ---------- HTML5 Video / HLS Controller ---------- */
+/* ---------- HTML5 Video / HLS / Embed Controller ---------- */
 function initVideoPlayer() {
   videoElement = document.getElementById('videoPlayer');
   if (!videoElement) return;
+
+  playerContainer = videoElement.parentElement;
 
   videoElement.addEventListener('ended', () => {
     if (mode === 'episode') playCurrentQueueVideo();
@@ -195,6 +199,42 @@ function initVideoPlayer() {
   });
 }
 
+function removeEmbedIframe() {
+  const existingIframe = document.getElementById('youtubeIframe');
+  if (existingIframe) {
+    existingIframe.remove();
+  }
+  if (videoElement) {
+    videoElement.style.display = 'block';
+  }
+}
+
+function loadEmbedPlayer(embedUrl) {
+  if (hlsInstance) {
+    hlsInstance.destroy();
+    hlsInstance = null;
+  }
+  if (videoElement) {
+    videoElement.pause();
+    videoElement.style.display = 'none';
+  }
+
+  let iframe = document.getElementById('youtubeIframe');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'youtubeIframe';
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = 'none';
+    iframe.allow = 'autoplay; encrypted-media';
+    iframe.allowFullscreen = true;
+    playerContainer.appendChild(iframe);
+  }
+
+  iframe.src = embedUrl;
+  setStatus("YouTube Fallback modunda oynatılıyor.");
+}
+
 async function playCurrentQueueVideo(startSeconds = 0) {
   if (currentQueue.length === 0) { 
     advanceRotation(); 
@@ -206,14 +246,18 @@ async function playCurrentQueueVideo(startSeconds = 0) {
 
   try {
     const res = await fetch(`${API_BASE_URL}/api/stream/${videoId}`, {
-      headers: TUNNEL_HEADERS
+      headers: API_HEADERS
     });
     
     if (!res.ok) throw new Error(`HTTP Hata: ${res.status}`);
     
     const data = await res.json();
     
-    if (data.streamUrl) {
+    if (data.isEmbed) {
+      loadEmbedPlayer(data.streamUrl);
+      saveProgress();
+    } else if (data.streamUrl) {
+      removeEmbedIframe();
       setStatus("Oynatılıyor.");
       loadStream(data.streamUrl, startSeconds);
       saveProgress();
@@ -230,7 +274,6 @@ async function playCurrentQueueVideo(startSeconds = 0) {
 function loadStream(url, startSeconds = 0) {
   if (!videoElement) initVideoPlayer();
 
-  // Var olan HLS örneğini temizle
   if (hlsInstance) {
     hlsInstance.destroy();
     hlsInstance = null;
@@ -250,10 +293,7 @@ function loadStream(url, startSeconds = 0) {
   else if (isM3U8 && typeof Hls !== 'undefined' && Hls.isSupported()) {
     hlsInstance = new Hls({
       enableWorker: true,
-      lowLatencyMode: false,
-      xhrSetup: function (xhr) {
-        xhr.setRequestHeader("Bypass-Tunnel-Reminder", "true");
-      }
+      lowLatencyMode: false
     });
 
     hlsInstance.loadSource(url);
@@ -347,13 +387,14 @@ el.startBtn.addEventListener('click', async () => {
 });
 
 el.pauseBtn.addEventListener('click', () => {
-  if (!videoElement) return;
-  if (!videoElement.paused) {
-    videoElement.pause();
-    el.pauseBtn.textContent = '▶ Devam';
-  } else {
-    videoElement.play();
-    el.pauseBtn.textContent = '⏸ Duraklat';
+  if (videoElement && videoElement.style.display !== 'none') {
+    if (!videoElement.paused) {
+      videoElement.pause();
+      el.pauseBtn.textContent = '▶ Devam';
+    } else {
+      videoElement.play();
+      el.pauseBtn.textContent = '⏸ Duraklat';
+    }
   }
 });
 
@@ -367,6 +408,7 @@ el.nextBtn.addEventListener('click', () => {
 el.resetBtn.addEventListener('click', () => {
   clearInterval(autosaveInterval);
   clearProgress();
+  removeEmbedIframe();
   if (hlsInstance) {
     hlsInstance.destroy();
     hlsInstance = null;
