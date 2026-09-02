@@ -1,12 +1,10 @@
 import os
-import asyncio
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import yt_dlp
 import requests
-from playwright.async_api import async_playwright
 
 app = Flask(__name__)
 
@@ -29,52 +27,31 @@ CONFIG = {
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS, POST"
     return response
 
 # =========================================================
-# OTOMATİK ÇEREZ YENİLEME BOTU (Playwright)
+# UZAKTAN ÇEREZ GÜNCELLEME ENDPOINT'İ (Telefon / Worker için)
 # =========================================================
-async def _fetch_fresh_cookies():
-    print("🤖 Playwright ile yeni YouTube çerezleri çekiliyor...")
+@app.route('/api/update-cookies', methods=['POST', 'OPTIONS'])
+def update_cookies():
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
-            page = await context.new_page()
-            
-            # YouTube ana sayfasına git
-            await page.goto("https://www.youtube.com", wait_until="domcontentloaded")
-            await page.wait_for_timeout(3000)
+        data = request.get_json()
+        if not data or 'cookies' not in data:
+            return jsonify({"error": "Çerez verisi bulunamadı"}), 400
 
-            cookies = await context.cookies()
-            netscape_cookies = "# Netscape HTTP Cookie File\n"
-            for c in cookies:
-                domain = c['domain']
-                flag = "TRUE" if domain.startswith(".") else "FALSE"
-                path = c['path']
-                secure = "TRUE" if c['secure'] else "FALSE"
-                expiration = int(c.get('expires', 0))
-                name = c['name']
-                value = c['value']
-                netscape_cookies += f"{domain}\t{flag}\t{path}\t{secure}\t{expiration}\t{name}\t{value}\n"
+        cookie_content = data['cookies']
+        
+        with open(COOKIE_FILE, "w", encoding="utf-8") as f:
+            f.write(cookie_content)
 
-            with open(COOKIE_FILE, "w", encoding="utf-8") as f:
-                f.write(netscape_cookies)
-
-            print("✅ Yeni çerezler başarıyla kaydoldu (cookies.txt).")
-            await browser.close()
+        print("📥 Telefon üzerinden yeni çerezler başarıyla alındı ve kaydedildi!")
+        return jsonify({"status": "success", "message": "Çerezler başarıyla güncellendi"}), 200
     except Exception as e:
-        print(f"❌ Çerez çekme hatası: {e}")
-
-def refresh_cookies():
-    """Async çerez motorunu senkron ortama köprüler"""
-    try:
-        asyncio.run(_fetch_fresh_cookies())
-    except Exception as e:
-        print(f"Asyncio Çalıştırma Hatası: {e}")
+        return jsonify({"error": str(e)}), 500
 
 # =========================================================
 # PLAYLIST VE STREAM MANTIĞI
@@ -171,12 +148,12 @@ def get_live_m3u8(video_id):
         'nocheckcertificate': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android']
+                'player_client': ['ios', 'android', 'mweb']
             }
         }
     }
     
-    if os.path.exists(COOKIE_FILE):
+    if os.path.exists(COOKIE_FILE) and os.path.getsize(COOKIE_FILE) > 50:
         ydl_opts['cookiefile'] = COOKIE_FILE
 
     try:
@@ -186,26 +163,9 @@ def get_live_m3u8(video_id):
             if url:
                 return url
     except Exception as e:
-        error_msg = str(e)
-        print(f"yt-dlp kısıtlamaya takıldı ({video_id}). Hata: {error_msg}")
+        print(f"yt-dlp kısıtlamaya takıldı ({video_id}). Hata: {e}")
 
-        # Eğer Bot veya Giriş Engeline takıldıysa OTOMATİK ÇEREZ YENİLE!
-        if "Sign in to confirm" in error_msg or "bot" in error_msg.lower() or "403" in error_msg:
-            print("🔄 Bot engeli tespit edildi! Playwright ile çerezler yenileniyor...")
-            refresh_cookies()
-            
-            # Yenilenen çerezle TEKRAR dene
-            if os.path.exists(COOKIE_FILE):
-                ydl_opts['cookiefile'] = COOKIE_FILE
-                try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(video_url, download=False)
-                        if info.get('url'):
-                            return info.get('url')
-                except Exception as retry_e:
-                    print(f"İkinci denemede de yt-dlp başarısız: {retry_e}")
-
-    # yt-dlp ve çerez yenileme tamamen başarısız olursa dış servislere başvur
+    # yt-dlp veya çerez yetersiz kalırsa dış servislere (Piped/Invidious) başvur
     return get_external_stream_fallback(video_id)
 
 # =========================================================
@@ -245,3 +205,4 @@ def get_stream_link(video_id):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
+        
