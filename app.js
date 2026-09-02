@@ -84,9 +84,11 @@ function renderShowCheckboxes() {
     const isChecked = savedSelection.includes(s.name);
     const label = document.createElement('label');
     label.className = 'checkbox-card';
+    label.style.display = 'block';
+    label.style.margin = '8px 0';
     label.innerHTML = `
       <input type="checkbox" value="${s.name}" ${isChecked ? 'checked' : ''}>
-      <span>${s.name}</span>
+      <span> ${s.name} (${s.units ? s.units.length : 0} Ünite/Bölüm)</span>
     `;
     el.showCheckboxContainer.appendChild(label);
   });
@@ -201,7 +203,7 @@ function renderQueuePanel() {
     const isSelected = activeShows.some(a => a.name === s.name);
     const item = document.createElement('div');
     item.className = 'queue-item' + (idx === rotationIndex && started ? ' active' : '') + (!isSelected ? ' disabled' : '');
-    item.innerHTML = `<span class="dot"></span><span>${s.name}</span>`;
+    item.innerHTML = `<span class="dot"></span><span>${s.name} (${s.unitIndex + 1}. Bölüm/Ünite Sırasında)</span>`;
     el.queue.appendChild(item);
   });
 }
@@ -387,7 +389,16 @@ function loadStream(url, startSeconds = 0) {
 /* ---------- Marathon Logic ---------- */
 function startMarathon() {
   started = true;
-  rotationIndex = randomShowIndex();
+  
+  // Esrarengiz Kasaba'nın index'ini bul ve ilk diziyi o yap, 1. bölümden başlat
+  const ekIndex = shows.findIndex(s => s.name.toLowerCase().includes("esrarengiz"));
+  if (ekIndex !== -1) {
+    rotationIndex = ekIndex;
+    shows[ekIndex].unitIndex = 0; // Kesinlikle 1. Bölümden başlasın
+  } else {
+    rotationIndex = randomShowIndex();
+  }
+  
   nextIndex = randomShowIndex();
   renderQueuePanel();
   playNextShowUnit();
@@ -401,6 +412,7 @@ function playNextShowUnit() {
     return; 
   }
 
+  // Bölümleri sırayla oynatır (1, 2, 3...)
   const unit = show.units[show.unitIndex];
   show.unitIndex = (show.unitIndex + 1) % show.units.length;
 
