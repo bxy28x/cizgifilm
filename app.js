@@ -1,7 +1,7 @@
 /* =========================================================
    LOCALTUNNEL FLASK BACKEND İLE ENTEGRE MARATON İSTEMCİSİ
    ========================================================= */
-const API_BASE_URL = "https://c19eb5d9a824aec7-188-132-144-11.serveousercontent.com";
+const API_BASE_URL = "https://cizgifilm-1.onrender.com";
 const LS_PROGRESS = "marathon_progress";
 
 /* Localtunnel IP onay ekranını tamamen bypass eden varsayılan header */
