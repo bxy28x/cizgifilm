@@ -1,8 +1,14 @@
 /* =========================================================
-   FLASK BACKEND İLE ENTEGRE MARATON İSTEMCİSİ
+   LOCALTUNNEL FLASK BACKEND İLE ENTEGRE MARATON İSTEMCİSİ
    ========================================================= */
-const API_BASE_URL = "http://192.168.1.110:5000";
+const API_BASE_URL = "https://ozer-marathon.loca.lt";
 const LS_PROGRESS = "marathon_progress";
+
+/* Localtunnel IP onay ekranını tamamen bypass eden varsayılan header */
+const TUNNEL_HEADERS = {
+  "Bypass-Tunnel-Reminder": "true",
+  "Accept": "application/json"
+};
 
 /* ---------- state ---------- */
 let videoElement = null;
@@ -108,7 +114,11 @@ function highlightActiveShow() {
 /* ---------- Backend Fetching & Grouping ---------- */
 async function loadAllShowsFromBackend() {
   setStatus("Sunucudan playlistler çekiliyor…");
-  const response = await fetch(`${API_BASE_URL}/api/shows`);
+  
+  const response = await fetch(`${API_BASE_URL}/api/shows`, {
+    headers: TUNNEL_HEADERS
+  });
+  
   if (!response.ok) throw new Error("Flask sunucusuna bağlanılamadı!");
   
   const rawShows = await response.json();
@@ -185,7 +195,9 @@ async function playCurrentQueueVideo() {
   setStatus(`Stream adresi alınıyor (${videoId})…`);
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/stream/${videoId}`);
+    const res = await fetch(`${API_BASE_URL}/api/stream/${videoId}`, {
+      headers: TUNNEL_HEADERS
+    });
     const data = await res.json();
     
     if (data.streamUrl) {
