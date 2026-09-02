@@ -3,6 +3,8 @@
    ========================================================= */
 const API_BASE_URL = "https://cizgifilm-1.onrender.com";
 const LS_PROGRESS = "marathon_progress";
+const LS_SELECTED_SHOWS = "marathon_selected_shows";
+const LS_LAST_SELECTION_DATE = "marathon_last_selection_date";
 
 const API_HEADERS = {
   "Accept": "application/json"
@@ -10,10 +12,10 @@ const API_HEADERS = {
 
 /* ---------- state ---------- */
 let videoElement = null;
-let iframeElement = null;
 let playerContainer = null;
 let hlsInstance = null;
-let shows = [];        
+let shows = [];            
+let activeShows = [];      // Seçili şov havuzu
 let showsLoaded = false;
 let rotationIndex = 0;
 let currentQueue = [];     
@@ -24,9 +26,30 @@ let started = false;
 let autosaveInterval = null;
 let nextIndex = 0;         
 
+/* ---------- Tarih & Günlük Limit Kontrolü ---------- */
+function getTodayDateString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+function canChangeSelectionToday() {
+  const lastDate = localStorage.getItem(LS_LAST_SELECTION_DATE);
+  return lastDate !== getTodayDateString();
+}
+
+function updateActiveShows() {
+  const savedSelection = JSON.parse(localStorage.getItem(LS_SELECTED_SHOWS));
+  if (savedSelection && savedSelection.length > 0) {
+    activeShows = shows.filter(s => savedSelection.includes(s.name));
+  } else {
+    activeShows = [...shows];
+  }
+}
+
 function randomShowIndex() {
-  if (!shows.length) return 0;
-  return Math.floor(Math.random() * shows.length);
+  if (!activeShows.length) return 0;
+  const randomActive = activeShows[Math.floor(Math.random() * activeShows.length)];
+  return shows.findIndex(s => s.name === randomActive.name);
 }
 
 /* ---------- DOM refs ---------- */
@@ -35,16 +58,89 @@ const el = {
   pauseBtn: document.getElementById('pauseBtn'),
   nextBtn: document.getElementById('nextBtn'),
   resetBtn: document.getElementById('resetBtn'),
+  settingsBtn: document.getElementById('settingsBtn'),
+  selectionModal: document.getElementById('selectionModal'),
+  closeModalBtn: document.getElementById('closeModalBtn'),
+  saveSelectionBtn: document.getElementById('saveSelectionBtn'),
+  showCheckboxContainer: document.getElementById('showCheckboxContainer'),
   nowTitle: document.getElementById('nowTitle'),
   nextTitle: document.getElementById('nextTitle'),
   adPanel: document.getElementById('adPanel'),
-  adCountdown: document.getElementById('adCountdown'),
   queue: document.getElementById('queue'),
   status: document.getElementById('status'),
 };
 
 function setStatus(msg) { 
   if (el.status) el.status.textContent = msg; 
+}
+
+/* ---------- Modal & Ayarlar Mantığı ---------- */
+function renderShowCheckboxes() {
+  if (!el.showCheckboxContainer) return;
+  el.showCheckboxContainer.innerHTML = "";
+  const savedSelection = JSON.parse(localStorage.getItem(LS_SELECTED_SHOWS)) || shows.map(s => s.name);
+
+  shows.forEach(s => {
+    const isChecked = savedSelection.includes(s.name);
+    const label = document.createElement('label');
+    label.className = 'checkbox-card';
+    label.innerHTML = `
+      <input type="checkbox" value="${s.name}" ${isChecked ? 'checked' : ''}>
+      <span>${s.name}</span>
+    `;
+    el.showCheckboxContainer.appendChild(label);
+  });
+}
+
+if (el.settingsBtn) {
+  el.settingsBtn.addEventListener('click', async () => {
+    if (!showsLoaded) {
+      try {
+        await loadAllShowsFromBackend();
+      } catch (e) {
+        alert("Playlistler henüz yüklenemedi, lütfen tekrar deneyin.");
+        return;
+      }
+    }
+
+    if (!canChangeSelectionToday()) {
+      alert("⚠️ Çizgi film tercihini bugün zaten belirledin! Günde sadece 1 defa değişiklik yapabilirsin.");
+      return;
+    }
+
+    renderShowCheckboxes();
+    if (el.selectionModal) el.selectionModal.classList.remove('hidden');
+  });
+}
+
+if (el.closeModalBtn) {
+  el.closeModalBtn.addEventListener('click', () => {
+    if (el.selectionModal) el.selectionModal.classList.add('hidden');
+  });
+}
+
+if (el.saveSelectionBtn) {
+  el.saveSelectionBtn.addEventListener('click', () => {
+    const checkedInputs = el.showCheckboxContainer.querySelectorAll('input[type="checkbox"]:checked');
+    const selectedNames = Array.from(checkedInputs).map(cb => cb.value);
+
+    if (selectedNames.length === 0) {
+      alert("Lütfen en az 1 çizgi film seçin!");
+      return;
+    }
+
+    localStorage.setItem(LS_SELECTED_SHOWS, JSON.stringify(selectedNames));
+    localStorage.setItem(LS_LAST_SELECTION_DATE, getTodayDateString());
+
+    updateActiveShows();
+    if (el.selectionModal) el.selectionModal.classList.add('hidden');
+    setStatus("Seçimlerin kaydedildi.");
+
+    if (started) {
+      currentQueue = [];
+      advanceRotation();
+    }
+  });
 }
 
 /* ---------- progress save / resume ---------- */
@@ -56,8 +152,7 @@ function getSavedProgress() {
 }
 
 function saveProgress() {
-  if (mode !== 'episode') return;
-  const currentTime = videoElement ? (videoElement.currentTime || 0) : 0;
+  if (mode !== 'episode' || !videoElement) return;
   const data = {
     rotationIndex,
     nextIndex,
@@ -65,7 +160,7 @@ function saveProgress() {
     currentShowName,
     currentUnitTitle,
     remainingQueue: currentQueue.slice(),
-    currentTime: currentTime,
+    currentTime: videoElement.currentTime || 0,
   };
   localStorage.setItem(LS_PROGRESS, JSON.stringify(data));
 }
@@ -103,8 +198,9 @@ function renderQueuePanel() {
   if (!el.queue) return;
   el.queue.innerHTML = "";
   shows.forEach((s, idx) => {
+    const isSelected = activeShows.some(a => a.name === s.name);
     const item = document.createElement('div');
-    item.className = 'queue-item' + (idx === rotationIndex && started ? ' active' : '');
+    item.className = 'queue-item' + (idx === rotationIndex && started ? ' active' : '') + (!isSelected ? ' disabled' : '');
     item.innerHTML = `<span class="dot"></span><span>${s.name}</span>`;
     el.queue.appendChild(item);
   });
@@ -135,6 +231,7 @@ async function loadAllShowsFromBackend() {
   }));
 
   showsLoaded = true;
+  updateActiveShows();
   setStatus("Playlistler başarıyla yüklendi.");
 }
 
@@ -179,7 +276,7 @@ function groupIntoUnits(videos) {
   return units;
 }
 
-/* ---------- HTML5 Video / HLS / Embed Controller ---------- */
+/* ---------- HTML5 Video / HLS Controller ---------- */
 function initVideoPlayer() {
   videoElement = document.getElementById('videoPlayer');
   if (!videoElement) return;
@@ -197,42 +294,6 @@ function initVideoPlayer() {
       if (started) playCurrentQueueVideo();
     }, 3000);
   });
-}
-
-function removeEmbedIframe() {
-  const existingIframe = document.getElementById('youtubeIframe');
-  if (existingIframe) {
-    existingIframe.remove();
-  }
-  if (videoElement) {
-    videoElement.style.display = 'block';
-  }
-}
-
-function loadEmbedPlayer(embedUrl) {
-  if (hlsInstance) {
-    hlsInstance.destroy();
-    hlsInstance = null;
-  }
-  if (videoElement) {
-    videoElement.pause();
-    videoElement.style.display = 'none';
-  }
-
-  let iframe = document.getElementById('youtubeIframe');
-  if (!iframe) {
-    iframe = document.createElement('iframe');
-    iframe.id = 'youtubeIframe';
-    iframe.style.width = '100%';
-    iframe.style.height = '100%';
-    iframe.style.border = 'none';
-    iframe.allow = 'autoplay; encrypted-media';
-    iframe.allowFullscreen = true;
-    playerContainer.appendChild(iframe);
-  }
-
-  iframe.src = embedUrl;
-  setStatus("YouTube Fallback modunda oynatılıyor.");
 }
 
 async function playCurrentQueueVideo(startSeconds = 0) {
@@ -253,11 +314,7 @@ async function playCurrentQueueVideo(startSeconds = 0) {
     
     const data = await res.json();
     
-    if (data.isEmbed) {
-      loadEmbedPlayer(data.streamUrl);
-      saveProgress();
-    } else if (data.streamUrl) {
-      removeEmbedIframe();
+    if (data.streamUrl) {
       setStatus("Oynatılıyor.");
       loadStream(data.streamUrl, startSeconds);
       saveProgress();
@@ -266,7 +323,7 @@ async function playCurrentQueueVideo(startSeconds = 0) {
     }
   } catch (err) {
     console.error(err);
-    setStatus("Video yüklenemedi, 2 sn içinde sonraki bölüme geçiliyor...");
+    setStatus("Akış bulunamadı, 2 sn içinde sonraki bölüme geçiliyor...");
     setTimeout(() => playCurrentQueueVideo(), 2000);
   }
 }
@@ -387,7 +444,7 @@ el.startBtn.addEventListener('click', async () => {
 });
 
 el.pauseBtn.addEventListener('click', () => {
-  if (videoElement && videoElement.style.display !== 'none') {
+  if (videoElement) {
     if (!videoElement.paused) {
       videoElement.pause();
       el.pauseBtn.textContent = '▶ Devam';
@@ -408,7 +465,6 @@ el.nextBtn.addEventListener('click', () => {
 el.resetBtn.addEventListener('click', () => {
   clearInterval(autosaveInterval);
   clearProgress();
-  removeEmbedIframe();
   if (hlsInstance) {
     hlsInstance.destroy();
     hlsInstance = null;
