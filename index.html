@@ -62,18 +62,22 @@
     </section>
   </main>
 
-  <dialog id="settingsDialog">
-    <form method="dialog" id="settingsForm">
-      <h2>Ayarlar</h2>
-      <label>Flask API Sunucu Adresi
-        <input id="apiServerUrl" type="text" autocomplete="off" placeholder="http://localhost:5000" value="http://localhost:5000" tabindex="6">
-      </label>
-      <div class="dialog-actions">
-        <button value="cancel" class="secondary" tabindex="7">İptal</button>
-        <button value="save" class="primary" tabindex="8">Kaydet</button>
+  <!-- Çizgi Film Seçim Modalı -->
+  <div id="selectionModal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <h2>Çizgi Film Tercihi</h2>
+      <p class="muted small">İzlemek istediğin çizgi filmleri seç. (Günde 1 defa değiştirilebilir)</p>
+      
+      <div id="showCheckboxContainer" class="checkbox-group">
+        <!-- Checkbox'lar app.js tarafından dinamik eklenecek -->
       </div>
-    </form>
-  </dialog>
+
+      <div class="dialog-actions">
+        <button id="closeModalBtn" class="secondary">Kapat</button>
+        <button id="saveSelectionBtn" class="primary">Seçimi Kaydet</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
