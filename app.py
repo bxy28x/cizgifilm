@@ -7,7 +7,6 @@ import requests
 
 app = Flask(__name__)
 
-# CORS Tüm Origin ve Header'lara açık
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 CONFIG = {
@@ -28,7 +27,6 @@ def add_cors_headers(response):
     return response
 
 def fetch_single_playlist(show):
-    """Tek bir oynatma listesini hızlıca çekmek için yt_dlp kullanır."""
     playlist_url = f"https://www.youtube.com/playlist?list={show['playlistId']}"
     
     ydl_opts = {
@@ -39,11 +37,8 @@ def fetch_single_playlist(show):
         'playlist_items': '1-100',
         'extractor_args': {
             'youtube': {
-                'player_client': ['mweb', 'android', 'ios']
+                'player_client': ['mweb', 'tvhtml5']
             }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'
         }
     }
     
@@ -66,35 +61,54 @@ def fetch_single_playlist(show):
         "videos": videos
     }
 
-def get_fallback_invidious_stream(video_id):
-    """yt-dlp Render IP bloğuna takılırsa Invidious API üzerinden mp4 stream çeker."""
+def get_external_stream_fallback(video_id):
+    """Piped ve Invidious API örneklerini tarayarak MP4/HLS akış adresi çeker."""
+    youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+
+    # 1. Piped API Örnekleri
+    piped_instances = [
+        "https://pipedapi.kavin.rocks",
+        "https://api.piped.private.coffee",
+        "https://pipedapi.mha.fi"
+    ]
+    
+    for instance in piped_instances:
+        try:
+            res = requests.get(f"{instance}/streams/{video_id}", timeout=4)
+            if res.status_code == 200:
+                data = res.json()
+                audio_video_streams = data.get('videoStreams', [])
+                for stream in audio_video_streams:
+                    if stream.get('mimeType') == 'video/mp4' and stream.get('url'):
+                        return stream.get('url')
+        except Exception as e:
+            print(f"Piped hatası ({instance}): {e}")
+
+    # 2. Invidious API Güncel Örnekleri
     invidious_instances = [
-        "https://invidious.nerdvpn.de",
-        "https://inv.tux.pizza",
-        "https://invidious.drgns.space"
+        "https://invidious.yewtu.be",
+        "https://inv.riverside.rocks",
+        "https://invidious.lunar.icu",
+        "https://vid.puffyan.us"
     ]
     
     for instance in invidious_instances:
         try:
-            url = f"{instance}/api/v1/videos/{video_id}"
-            res = requests.get(url, timeout=5)
+            res = requests.get(f"{instance}/api/v1/videos/{video_id}", timeout=4)
             if res.status_code == 200:
                 data = res.json()
-                # MP4 ve ses barındıran akışı seç
                 format_streams = data.get('formatStreams', [])
                 if format_streams:
-                    # En yüksek kaliteli MP4 akışını döndür
                     return format_streams[0].get('url')
         except Exception as e:
-            print(f"Invidious instance ({instance}) hatası: {e}")
-            continue
+            print(f"Invidious hatası ({instance}): {e}")
+
     return None
 
 def get_live_m3u8(video_id):
-    """Video oynatma linkini yt_dlp ve yedek API'ler ile çeker."""
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
-    # 1. Aşama: Gelişmiş yt_dlp Ayarları
+    # TVHTML5 ve Embedded İstemcisi Bot Engelini Genellikle Aşar
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'quiet': True,
@@ -102,11 +116,11 @@ def get_live_m3u8(video_id):
         'nocheckcertificate': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'mweb']
+                'player_client': ['tvhtml5', 'android_embedded', 'mweb']
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (SmartTV; SmartTV; U; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
         }
     }
     
@@ -117,10 +131,10 @@ def get_live_m3u8(video_id):
             if url:
                 return url
     except Exception as e:
-        print(f"yt-dlp Stream hatası ({video_id}): {e}. Invidious Fallback deneniyor...")
+        print(f"yt-dlp hatası ({video_id}): {e}. Alternatif API'ler deneniyor...")
     
-    # 2. Aşama: yt-dlp patlarsa Invidious yedek hattını devreye sok
-    return get_fallback_invidious_stream(video_id)
+    # yt-dlp engellenirse dış API yedek mekanizmasını çalıştır
+    return get_external_stream_fallback(video_id)
 
 @app.route('/api/shows', methods=['GET', 'OPTIONS'])
 def get_shows():
