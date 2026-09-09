@@ -102,7 +102,12 @@ def get_ad_stream_url():
     now = time.time()
     if _AD_STREAM_CACHE["url"] and (now - _AD_STREAM_CACHE["ts"] < AD_STREAM_CACHE_TTL_SECONDS):
         return _AD_STREAM_CACHE["url"]
-    url = get_live_m3u8(CONFIG["AD_VIDEO_ID"])
+    try:
+        url = get_live_m3u8(CONFIG["AD_VIDEO_ID"])
+    except Exception as e:
+        # Reklam çözülemese bile asıl bölüm oynatımı bundan etkilenmesin
+        print(f"[uyari] reklam stream'i alinamadi: {e}")
+        return None
     if url:
         _AD_STREAM_CACHE["url"] = url
         _AD_STREAM_CACHE["ts"] = now
@@ -189,19 +194,16 @@ def fetch_single_playlist(show):
 
 
 def get_live_m3u8(video_id):
-    """Video oynatma linkini doğrudan yt_dlp ile alır."""
+    """Video oynatma linkini doğrudan yt_dlp ile alır. Hata olursa yukarı fırlatır
+    (endpoint bunu yakalayıp gerçek sebebi cevapta döner)."""
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     ydl_opts = {
         **_ydl_base_opts(),
         'format': 'best',
     }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            return info.get('url')
-    except Exception as e:
-        print(f"Stream hatası ({video_id}): {e}")
-        return None
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(video_url, download=False)
+        return info.get('url')
 
 
 @app.route('/api/shows', methods=['GET', 'OPTIONS'])
