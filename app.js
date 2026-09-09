@@ -32,7 +32,8 @@ async function resolveApiBaseUrl() {
 }
 
 const API_HEADERS = {
-  "Accept": "application/json"
+  "Accept": "application/json",
+  "Bypass-Tunnel-Reminder": "true"
 };
 
 /* ---------- state ---------- */
