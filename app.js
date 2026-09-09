@@ -228,8 +228,8 @@ async function playCurrentQueueVideo() {
       headers: API_HEADERS
     });
     const data = await res.json();
-    
-    if (!data.streamUrl) throw new Error("Stream URL boş döndü.");
+
+    if (!data.streamUrl) throw new Error(data.error || `Stream URL boş döndü (HTTP ${res.status})`);
 
     const ad = data.ad;
     if (ad && ad.url) {
@@ -242,7 +242,7 @@ async function playCurrentQueueVideo() {
     saveProgress();
   } catch (err) {
     console.error(err);
-    setStatus("Video yüklenemedi, sonraki bölüme geçiliyor...");
+    setStatus(`Hata: ${err.message} — [${API_BASE_URL}] sonraki bölüme geçiliyor...`);
     setTimeout(playCurrentQueueVideo, 2000);
   }
 }
