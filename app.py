@@ -1,4 +1,3 @@
-import os
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, jsonify, request
@@ -11,15 +10,16 @@ app = Flask(__name__)
 # Tüm kökenlere (Origins) izin ver
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-COOKIE_FILE = "cookies.txt"
-
 CONFIG = {
     "SHOWS": [
         { "name": "Oggy",              "playlistId": "PLTLXNxXgTfEz5rZnXpx9uPx8LbENHN3_A" },
         { "name": "Esrarengiz Kasaba", "playlistId": "PLO7jGcCLf31VzYNKRuiGNjaIpS8Kb_fGB" },
         { "name": "Doraemon",          "playlistId": "PLCxWTrC_hNKNGoehF-TGH89pzp2FGySHx" },
         { "name": "4. Çizgi Film",     "playlistId": "PL3SPOx9gE-q0RtN0a9RP4vtOyB48w89Oz" },
-        { "name": "Emiray",            "playlistId": "PL8dXShvpbmneB6w8UzuA1kWYyH0dFDZgJ" }
+        { "name": "Emiray",            "playlistId": "PL8dXShvpbmneB6w8UzuA1kWYyH0dFDZgJ" },
+        { "name": "6. Çizgi Film",     "playlistId": "PLA5dyskGy4csiH0H3Wx9v0cM1q9liVhXj" },
+        { "name": "7. Çizgi Film",     "playlistId": "PL5UGND8Z5_7mQAbnEF0fcmBWvPGpNoSmc" },
+        { "name": "8. Çizgi Film",     "playlistId": "PLQHiPz78IW4Gy8rFXT62k7JWFcPbhjSr4" }
     ]
 }
 
@@ -27,31 +27,8 @@ CONFIG = {
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS, POST"
+    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
     return response
-
-# =========================================================
-# UZAKTAN ÇEREZ GÜNCELLEME ENDPOINT'İ (Telefon / Worker için)
-# =========================================================
-@app.route('/api/update-cookies', methods=['POST', 'OPTIONS'])
-def update_cookies():
-    if request.method == 'OPTIONS':
-        return jsonify({"status": "ok"}), 200
-
-    try:
-        data = request.get_json()
-        if not data or 'cookies' not in data:
-            return jsonify({"error": "Çerez verisi bulunamadı"}), 400
-
-        cookie_content = data['cookies']
-        
-        with open(COOKIE_FILE, "w", encoding="utf-8") as f:
-            f.write(cookie_content)
-
-        print("📥 Telefon üzerinden yeni çerezler başarıyla alındı ve kaydedildi!")
-        return jsonify({"status": "success", "message": "Çerezler başarıyla güncellendi"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 # =========================================================
 # PLAYLIST VE STREAM MANTIĞI
@@ -94,7 +71,7 @@ def fetch_single_playlist(show):
     }
 
 def get_external_stream_fallback(video_id):
-    """Aktif Piped ve Invidious API örnekleri üzerinden MP4/M3U8 adresi çeker."""
+    """Aktif Piped ve Invidious API örnekleri üzerinden alternatif MP4/M3U8 adresi çeker."""
     # 1. Piped API Örnekleri
     piped_instances = [
         "https://pipedapi.kavin.rocks",
@@ -148,13 +125,10 @@ def get_live_m3u8(video_id):
         'nocheckcertificate': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android', 'mweb']
+                'player_client': ['android', 'mweb', 'tv']
             }
         }
     }
-    
-    if os.path.exists(COOKIE_FILE) and os.path.getsize(COOKIE_FILE) > 50:
-        ydl_opts['cookiefile'] = COOKIE_FILE
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -163,9 +137,8 @@ def get_live_m3u8(video_id):
             if url:
                 return url
     except Exception as e:
-        print(f"yt-dlp kısıtlamaya takıldı ({video_id}). Hata: {e}")
+        print(f"yt-dlp doğrudan client ile başarısız oldu ({video_id}). Hata: {e}")
 
-    # yt-dlp veya çerez yetersiz kalırsa dış servislere (Piped/Invidious) başvur
     return get_external_stream_fallback(video_id)
 
 # =========================================================
@@ -205,4 +178,3 @@ def get_stream_link(video_id):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
-        
