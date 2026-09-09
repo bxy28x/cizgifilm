@@ -92,14 +92,15 @@ def fetch_single_playlist(show):
         "videos": videos
     }
 
-def get_external_stream_fallback(video_id):
-    """Aktif Piped ve Invidious API örnekleri üzerinden alternatif MP4/M3U8 adresi çeker."""
+def get_live_m3u8(video_id):
+    """YouTube bot engellerini ve çerez dertlerini tamamen aşan çok katmanlı stream bulucu."""
+    
+    # 1. Yöntem: Güvenilir Piped API Havuzu (Öncelikli)
     piped_instances = [
         "https://pipedapi.kavin.rocks",
         "https://api.piped.privacydev.net",
         "https://pipedapi.palvelu.org",
-        "https://piped-api.garudalinux.org",
-        "https://pipedapi.mha.fi"
+        "https://piped-api.garudalinux.org"
     ]
     for instance in piped_instances:
         try:
@@ -114,11 +115,12 @@ def get_external_stream_fallback(video_id):
         except Exception:
             continue
 
+    # 2. Yöntem: Invidious API Havuzu (İkincil Yedek)
     invidious_instances = [
         "https://invidious.nerdvpn.de",
         "https://inv.nadeko.net",
-        "https://invidious.no-commercial.biz",
-        "https://invidious.projectsegfau.lt"
+        "https://invidious.projectsegfau.lt",
+        "https://invidious.no-commercial.biz"
     ]
     for instance in invidious_instances:
         try:
@@ -130,37 +132,27 @@ def get_external_stream_fallback(video_id):
                     return format_streams[0].get('url')
         except Exception:
             continue
-    return None
 
-def get_live_m3u8(video_id):
+    # 3. Yöntem: Son çare doğrudan yt-dlp ve çerez denemesi
     video_url = f"https://www.youtube.com/watch?v={video_id}"
-    
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'quiet': True,
         'no_warnings': True,
-        'nocheckcertificate': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['ios', 'android']
-            }
-        }
+        'extractor_args': {'youtube': {'player_client': ['android', 'mweb']}}
     }
-    
-    # Çerez dosyası varsa yt-dlp doğrudan oturumla çalışır!
     if os.path.exists(COOKIE_FILE) and os.path.getsize(COOKIE_FILE) > 20:
         ydl_opts['cookiefile'] = COOKIE_FILE
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=False)
-            url = info.get('url')
-            if url:
-                return url
-    except Exception as e:
-        print(f"yt-dlp hata aldı ({video_id}): {e}")
+            if info and info.get('url'):
+                return info.get('url')
+    except Exception:
+        pass
 
-    return get_external_stream_fallback(video_id)
+    return None
 
 # =========================================================
 # ENDPOINTS
