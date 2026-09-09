@@ -1,3 +1,4 @@
+import os
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, jsonify, request
@@ -9,6 +10,8 @@ app = Flask(__name__)
 
 # Tüm kökenlere (Origins) izin ver
 CORS(app, resources={r"/*": {"origins": "*"}})
+
+COOKIE_FILE = "cookies.txt"
 
 CONFIG = {
     "SHOWS": [
@@ -27,8 +30,27 @@ CONFIG = {
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS, POST"
     return response
+
+# Uzaktan SID / Çerez Güncelleme Kapısı
+@app.route('/api/update-cookies', methods=['POST', 'OPTIONS'])
+def update_cookies():
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+
+    try:
+        data = request.get_json()
+        if not data or 'cookies' not in data:
+            return jsonify({"error": "Çerez verisi bulunamadı"}), 400
+
+        with open(COOKIE_FILE, "w", encoding="utf-8") as f:
+            f.write(data['cookies'])
+
+        print("📥 Yeni SID/Çerezler başarıyla kaydedildi!")
+        return jsonify({"status": "success", "message": "Çerezler güncellendi"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # =========================================================
 # PLAYLIST VE STREAM MANTIĞI
@@ -72,7 +94,6 @@ def fetch_single_playlist(show):
 
 def get_external_stream_fallback(video_id):
     """Aktif Piped ve Invidious API örnekleri üzerinden alternatif MP4/M3U8 adresi çeker."""
-    # 1. Piped API Örnekleri
     piped_instances = [
         "https://pipedapi.kavin.rocks",
         "https://api.piped.privacydev.net",
@@ -80,7 +101,6 @@ def get_external_stream_fallback(video_id):
         "https://piped-api.garudalinux.org",
         "https://pipedapi.mha.fi"
     ]
-    
     for instance in piped_instances:
         try:
             res = requests.get(f"{instance}/streams/{video_id}", timeout=3)
@@ -94,14 +114,12 @@ def get_external_stream_fallback(video_id):
         except Exception:
             continue
 
-    # 2. Invidious API Örnekleri
     invidious_instances = [
         "https://invidious.nerdvpn.de",
         "https://inv.nadeko.net",
         "https://invidious.no-commercial.biz",
         "https://invidious.projectsegfau.lt"
     ]
-    
     for instance in invidious_instances:
         try:
             res = requests.get(f"{instance}/api/v1/videos/{video_id}", timeout=3)
@@ -112,7 +130,6 @@ def get_external_stream_fallback(video_id):
                     return format_streams[0].get('url')
         except Exception:
             continue
-
     return None
 
 def get_live_m3u8(video_id):
@@ -125,10 +142,14 @@ def get_live_m3u8(video_id):
         'nocheckcertificate': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'mweb', 'tv']
+                'player_client': ['ios', 'android']
             }
         }
     }
+    
+    # Çerez dosyası varsa yt-dlp doğrudan oturumla çalışır!
+    if os.path.exists(COOKIE_FILE) and os.path.getsize(COOKIE_FILE) > 20:
+        ydl_opts['cookiefile'] = COOKIE_FILE
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -137,7 +158,7 @@ def get_live_m3u8(video_id):
             if url:
                 return url
     except Exception as e:
-        print(f"yt-dlp doğrudan client ile başarısız oldu ({video_id}). Hata: {e}")
+        print(f"yt-dlp hata aldı ({video_id}): {e}")
 
     return get_external_stream_fallback(video_id)
 
