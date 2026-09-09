@@ -40,11 +40,12 @@ _bootstrap_cookies_from_env()
 
 
 def _ydl_base_opts():
-    """Tum yt_dlp cagrilarinda ortak olan opsiyonlar (cookies dahil)."""
+    """Tum yt_dlp cagrilarinda ortak olan opsiyonlar (cookies dahil).
+    extractor_args (player_client) burada degil, cagiran yerde ayarlanir -
+    cunku get_live_m3u8 birden fazla client kombinasyonunu sirayla dener."""
     opts = {
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {'youtube': ['player_client=ios,android,web']},
     }
     if os.path.exists(COOKIES_FILE):
         opts['cookiefile'] = COOKIES_FILE
@@ -171,6 +172,7 @@ def fetch_single_playlist(show):
         'extract_flat': 'in_playlist',
         'skip_download': True,
         'playlist_items': '1-100',  # Hızlı yanıt için ilk 100 videoyu alır
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
 
     videos = []
@@ -194,16 +196,42 @@ def fetch_single_playlist(show):
 
 
 def get_live_m3u8(video_id):
-    """Video oynatma linkini doğrudan yt_dlp ile alır. Hata olursa yukarı fırlatır
-    (endpoint bunu yakalayıp gerçek sebebi cevapta döner)."""
+    """Video oynatma linkini yt_dlp ile alır. YouTube'un tek bir 'player client'
+    ile bazen verdigi gecici hatalari ("The page needs to be reloaded" gibi)
+    asmak icin birkac farkli client kombinasyonunu sirayla dener; hepsi
+    basarisiz olursa en son hatayi yukari firlatir."""
     video_url = f"https://www.youtube.com/watch?v={video_id}"
-    ydl_opts = {
-        **_ydl_base_opts(),
-        'format': 'best',
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(video_url, download=False)
-        return info.get('url')
+    base = _ydl_base_opts()
+
+    client_attempts = [
+        ['android'],
+        ['ios'],
+        ['android', 'web'],
+        ['web'],
+        ['tv'],
+    ]
+
+    last_error = None
+    for clients in client_attempts:
+        opts = {
+            **base,
+            'format': 'best',
+            'extractor_args': {'youtube': {'player_client': clients}},
+        }
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(video_url, download=False)
+                url = info.get('url') if info else None
+                if url:
+                    return url
+        except Exception as e:
+            last_error = e
+            print(f"[uyari] client={clients} basarisiz ({video_id}): {e}")
+            continue
+
+    if last_error:
+        raise last_error
+    return None
 
 
 @app.route('/api/shows', methods=['GET', 'OPTIONS'])
