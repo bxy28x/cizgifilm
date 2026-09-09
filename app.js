@@ -14,7 +14,7 @@ let API_BASE_URL = localStorage.getItem(LS_API_URL) || DEFAULT_API_BASE_URL;
    okuyup API_BASE_URL'i otomatik ayarlar.
    TODO: Kendi gist'ini oluşturduktan sonra aşağıdaki URL'i kendi
    kullanıcı adın ve gist ID'inle değiştir. */
-const DISCOVERY_URL = "https://gist.githubusercontent.com/KULLANICI_ADIN/GIST_ID/raw/current_api_url.txt";
+const DISCOVERY_URL = "https://gist.githubusercontent.com/bxy28x/4ff117333fb3547b747b98eae2f6ef17/raw/current_api_url.txt";
 
 async function resolveApiBaseUrl() {
   try {
