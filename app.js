@@ -8,6 +8,29 @@ const LS_API_URL = "marathon_api_url";
 /* API adresi Ayarlar diyaloğundan değiştirilebilir, localStorage'da saklanır */
 let API_BASE_URL = localStorage.getItem(LS_API_URL) || DEFAULT_API_BASE_URL;
 
+/* Termux tüneli her açılışta yeni bir adres verdiği için, güncel adresi elle
+   girmek yerine bir GitHub Gist'ten otomatik okuyoruz. Termux script'i tünel
+   URL'i değiştiğinde bu gist'i günceller, sayfa her açıldığında buradan
+   okuyup API_BASE_URL'i otomatik ayarlar.
+   TODO: Kendi gist'ini oluşturduktan sonra aşağıdaki URL'i kendi
+   kullanıcı adın ve gist ID'inle değiştir. */
+const DISCOVERY_URL = "https://gist.githubusercontent.com/KULLANICI_ADIN/GIST_ID/raw/current_api_url.txt";
+
+async function resolveApiBaseUrl() {
+  try {
+    const res = await fetch(`${DISCOVERY_URL}?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const text = (await res.text()).trim();
+    if (text && /^https?:\/\//.test(text) && text !== API_BASE_URL) {
+      API_BASE_URL = text;
+      localStorage.setItem(LS_API_URL, text);
+      console.log("API adresi otomatik güncellendi:", text);
+    }
+  } catch (e) {
+    console.warn("Adres keşfi başarısız, mevcut/kayıtlı adres kullanılacak:", e);
+  }
+}
+
 const API_HEADERS = {
   "Accept": "application/json"
 };
@@ -391,7 +414,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') saveProgress();
 });
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await resolveApiBaseUrl();
   initVideoPlayer();
   const saved = getSavedProgress();
   if (saved) {
